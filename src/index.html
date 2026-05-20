@@ -1,0 +1,1074 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Chores & Allowance</title>
+  <style>
+    *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+
+    :root {
+      --bg:           var(--hub-bg, #f9fafb);
+      --card:         var(--hub-surface, #ffffff);
+      --border:       var(--hub-border, #e5e7eb);
+      --border-mid:   var(--hub-border, #d1d5db);
+      --text:         var(--hub-text, #111827);
+      --muted:        var(--hub-text-muted, #6b7280);
+      --accent:       var(--hub-primary, #111827);
+      --accent-fg:    var(--hub-primary-fg, #ffffff);
+      --accent-hover: var(--hub-primary-hover, #374151);
+      --accent-light: #f3f4f6;
+      --green: #16a34a; --green-light: #dcfce7;
+      --amber: #d97706; --amber-light: #fef3c7;
+      --red: #dc2626;
+      --radius:       var(--hub-radius, 0.5rem);
+      --shadow:       0 1px 3px rgba(0,0,0,.07);
+    }
+
+    body {
+      font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+      background: var(--bg);
+      color: var(--text);
+      min-height: 100vh;
+      font-size: 15px;
+      line-height: 1.5;
+    }
+
+    /* ── Layout ─────────────────────────────────────────── */
+    .app { max-width: 600px; margin: 0 auto; padding: 16px; }
+
+    header {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      margin-bottom: 20px;
+      padding: 16px 20px;
+      background: var(--accent);
+      border-radius: var(--radius);
+      color: white;
+    }
+    header h1 { font-size: 1.2rem; font-weight: 700; }
+    header .week { font-size: 0.8rem; opacity: .75; margin-top: 2px; }
+
+    .btn {
+      display: inline-flex;
+      align-items: center;
+      gap: 6px;
+      padding: 8px 16px;
+      border-radius: 8px;
+      font-size: 0.875rem;
+      font-weight: 600;
+      cursor: pointer;
+      border: none;
+      transition: opacity .15s;
+    }
+    .btn:disabled { opacity: .5; cursor: default; }
+    .btn-primary { background: var(--accent); color: white; }
+    .btn-primary:hover:not(:disabled) { opacity: .88; }
+    .btn-ghost { background: transparent; color: var(--muted); border: 1.5px solid var(--border); }
+    .btn-ghost:hover { border-color: var(--text); color: var(--text); }
+    .btn-danger { background: var(--red); color: white; }
+    .btn-sm { padding: 5px 12px; font-size: 0.8rem; }
+
+    .card {
+      background: var(--card);
+      border: 1px solid var(--border);
+      border-radius: var(--radius);
+      box-shadow: var(--shadow);
+      margin-bottom: 12px;
+    }
+    .card-header {
+      padding: 14px 18px;
+      border-bottom: 1px solid var(--border);
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: 12px;
+    }
+    .card-header h2 { font-size: 1rem; font-weight: 600; }
+    .card-body { padding: 18px; }
+
+    /* ── Who am I? ──────────────────────────────────────── */
+    #who-screen {
+      text-align: center;
+      padding: 40px 16px;
+    }
+    #who-screen h2 { font-size: 1.4rem; font-weight: 700; margin-bottom: 8px; }
+    #who-screen p { color: var(--muted); margin-bottom: 28px; }
+    .member-grid {
+      display: grid;
+      grid-template-columns: repeat(auto-fill, minmax(130px, 1fr));
+      gap: 12px;
+      max-width: 440px;
+      margin: 0 auto;
+    }
+    .member-btn {
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      gap: 10px;
+      padding: 20px 12px;
+      background: var(--card);
+      border: 2px solid var(--border);
+      border-radius: var(--radius);
+      cursor: pointer;
+      transition: border-color .15s, background .15s;
+      font-size: 0.9rem;
+      font-weight: 600;
+      color: var(--text);
+    }
+    .member-btn:hover { border-color: var(--accent); background: var(--accent-light); }
+    .member-btn .avatar {
+      width: 52px;
+      height: 52px;
+      border-radius: 50%;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      font-size: 1.4rem;
+      font-weight: 700;
+      color: white;
+    }
+    .member-btn .role-badge {
+      font-size: 0.7rem;
+      font-weight: 500;
+      color: var(--muted);
+      text-transform: uppercase;
+      letter-spacing: .04em;
+    }
+
+    /* ── Chore list ─────────────────────────────────────── */
+    .chore-row {
+      display: flex;
+      align-items: center;
+      gap: 12px;
+      padding: 12px 18px;
+      border-bottom: 1px solid var(--border);
+      transition: background .1s;
+    }
+    .chore-row:last-child { border-bottom: none; }
+
+    .chore-check {
+      width: 26px;
+      height: 26px;
+      border-radius: 50%;
+      border: 2.5px solid var(--border);
+      flex-shrink: 0;
+      cursor: pointer;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      font-size: 14px;
+      transition: all .15s;
+      background: transparent;
+    }
+    .chore-check.done {
+      background: var(--green);
+      border-color: var(--green);
+      color: white;
+    }
+    .chore-check:not(.done):hover { border-color: var(--accent); }
+
+    .chore-name { flex: 1; }
+    .chore-name.done { text-decoration: line-through; color: var(--muted); }
+    .chore-pts {
+      font-size: 0.8rem;
+      font-weight: 600;
+      color: var(--accent);
+      background: var(--accent-light);
+      padding: 2px 8px;
+      border-radius: 20px;
+      flex-shrink: 0;
+    }
+    .chore-pts.done { color: var(--green); background: var(--green-light); }
+
+    /* ── Earnings summary ───────────────────────────────── */
+    .earnings-bar {
+      background: var(--accent-light);
+      border-radius: var(--radius);
+      padding: 16px 20px;
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      margin-bottom: 16px;
+    }
+    .earnings-bar .label { font-size: 0.85rem; color: var(--accent); font-weight: 600; }
+    .earnings-bar .amount { font-size: 1.5rem; font-weight: 800; color: var(--accent); }
+    .earnings-bar .pts { font-size: 0.8rem; color: var(--muted); }
+
+    /* ── Admin: kid cards ───────────────────────────────── */
+    .kid-card {
+      background: var(--card);
+      border: 1px solid var(--border);
+      border-radius: var(--radius);
+      padding: 16px 18px;
+      margin-bottom: 10px;
+      box-shadow: var(--shadow);
+    }
+    .kid-card-header {
+      display: flex;
+      align-items: center;
+      gap: 12px;
+      margin-bottom: 10px;
+    }
+    .kid-card-header .avatar {
+      width: 40px; height: 40px;
+      border-radius: 50%;
+      display: flex; align-items: center; justify-content: center;
+      font-size: 1.1rem; font-weight: 700; color: white;
+      flex-shrink: 0;
+    }
+    .kid-card-header .name { font-weight: 600; font-size: 1rem; }
+    .kid-card-header .earned { margin-left: auto; font-weight: 700; color: var(--green); }
+    .kid-chore-pills { display: flex; flex-wrap: wrap; gap: 6px; }
+    .kid-chore-pill {
+      font-size: 0.78rem;
+      padding: 3px 10px;
+      border-radius: 20px;
+      border: 1px solid var(--border);
+      color: var(--muted);
+    }
+    .kid-chore-pill.done { background: var(--green-light); border-color: var(--green); color: var(--green); }
+
+    /* ── Admin: manage chores ───────────────────────────── */
+    .chore-manage-row {
+      display: flex;
+      align-items: center;
+      gap: 10px;
+      padding: 10px 18px;
+      border-bottom: 1px solid var(--border);
+    }
+    .chore-manage-row:last-child { border-bottom: none; }
+    .chore-manage-row .chore-info { flex: 1; }
+    .chore-manage-row .chore-info .name { font-weight: 500; }
+    .chore-manage-row .chore-info .meta { font-size: 0.78rem; color: var(--muted); }
+
+    /* ── Modal ──────────────────────────────────────────── */
+    .modal-backdrop {
+      position: fixed; inset: 0;
+      background: rgba(0,0,0,.4);
+      display: flex; align-items: flex-end; justify-content: center;
+      z-index: 100;
+      padding: 0;
+    }
+    @media (min-width: 480px) {
+      .modal-backdrop { align-items: center; padding: 20px; }
+    }
+    .modal {
+      background: white;
+      border-radius: var(--radius) var(--radius) 0 0;
+      width: 100%;
+      max-width: 480px;
+      padding: 24px;
+      max-height: 90vh;
+      overflow-y: auto;
+    }
+    @media (min-width: 480px) {
+      .modal { border-radius: var(--radius); }
+    }
+    .modal h3 { font-size: 1.1rem; font-weight: 700; margin-bottom: 18px; }
+    .form-group { margin-bottom: 14px; }
+    .form-group label { display: block; font-size: 0.85rem; font-weight: 600; color: var(--muted); margin-bottom: 5px; }
+    .form-group input, .form-group select {
+      width: 100%;
+      border: 1.5px solid var(--border);
+      border-radius: 8px;
+      padding: 9px 12px;
+      font-size: 0.95rem;
+      outline: none;
+      transition: border-color .15s;
+    }
+    .form-group input:focus, .form-group select:focus { border-color: var(--accent); }
+    .form-group .row { display: flex; gap: 10px; }
+    .form-group .row > * { flex: 1; }
+
+    .assignee-grid { display: flex; flex-wrap: wrap; gap: 8px; }
+    .assignee-toggle {
+      display: flex; align-items: center; gap: 6px;
+      padding: 6px 12px;
+      border-radius: 20px;
+      border: 1.5px solid var(--border);
+      cursor: pointer;
+      font-size: 0.85rem;
+      font-weight: 500;
+      color: var(--muted);
+      background: transparent;
+      transition: all .15s;
+    }
+    .assignee-toggle.selected {
+      border-color: var(--accent);
+      background: var(--accent-light);
+      color: var(--accent);
+    }
+
+    .modal-actions { display: flex; gap: 10px; margin-top: 20px; }
+    .modal-actions .btn { flex: 1; justify-content: center; }
+
+    /* ── Tabs ───────────────────────────────────────────── */
+    .tabs {
+      display: flex;
+      gap: 4px;
+      background: var(--border);
+      border-radius: 10px;
+      padding: 3px;
+      margin-bottom: 16px;
+    }
+    .tab {
+      flex: 1;
+      padding: 7px;
+      border-radius: 8px;
+      border: none;
+      cursor: pointer;
+      font-size: 0.85rem;
+      font-weight: 600;
+      color: var(--muted);
+      background: transparent;
+      transition: all .15s;
+    }
+    .tab.active { background: white; color: var(--text); box-shadow: 0 1px 3px rgba(0,0,0,.1); }
+
+    /* ── Nav bar ────────────────────────────────────────── */
+    .nav-bar {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      margin-bottom: 16px;
+      gap: 10px;
+    }
+    .nav-bar .who { font-size: 0.85rem; color: var(--muted); }
+    .nav-bar .who strong { color: var(--text); }
+
+    /* ── Settings ───────────────────────────────────────── */
+    .setting-row {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      padding: 14px 18px;
+      border-bottom: 1px solid var(--border);
+    }
+    .setting-row:last-child { border-bottom: none; }
+    .setting-row .label { font-weight: 500; }
+    .setting-row .sublabel { font-size: 0.8rem; color: var(--muted); }
+    .setting-row input {
+      width: 90px;
+      border: 1.5px solid var(--border);
+      border-radius: 8px;
+      padding: 6px 10px;
+      font-size: 0.9rem;
+      text-align: right;
+    }
+
+    /* ── Misc ───────────────────────────────────────────── */
+    .empty { text-align: center; padding: 32px 16px; color: var(--muted); font-size: 0.9rem; }
+    .loading { text-align: center; padding: 40px; color: var(--muted); }
+    .error-msg { background: #fee2e2; color: var(--red); border-radius: 8px; padding: 10px 14px; font-size: 0.85rem; margin-bottom: 12px; }
+    .section-title { font-size: 0.75rem; font-weight: 700; color: var(--muted); text-transform: uppercase; letter-spacing: .06em; margin-bottom: 8px; }
+  </style>
+<base href="/run/chore-tracker/">
+</head>
+<body>
+<div class="app">
+  <div id="root"><div class="loading">Loading…</div></div>
+</div>
+
+<script type="module">
+import { memberColor, initial, esc, isAdult } from "/hub-sdk.js";
+import {
+  isoWeek, weekLabel, isAssigned, isDone, choresDoneThisWeek,
+  earnedCents, fmtDollars, getPreviousIsoWeek, previousWeekLabel,
+} from "./logic.js";
+
+// ─── Runtime globals injected by Chickadee Bandit ───────────────────────────────
+const CONTEXT    = window.__CONTEXT_URL    ?? "";
+const STORE      = window.__STORE_URL      ?? ""; // retained for one-time blob migration
+const DB         = window.__DB_URL         ?? "";
+const APP_ID     = window.__APP_ID         ?? "chore-tracker";
+const HUB_MEMBER = window.__CURRENT_MEMBER ?? null;
+
+// ─── State ────────────────────────────────────────────────────────────────
+let members       = [];
+let currentMember = null;
+let adminTab      = "overview";
+
+// App data — now backed by separate DB tables instead of one blob
+let settings    = { centsPerPoint: 10, resetDay: "monday", rewardType: "money", minutesPerPoint: 5 };
+let chores      = []; // { id, name, points, assignedTo: string[] }
+let completions = {}; // { "YYYY-WW": { choreId: [memberId, ...] } } — same shape as before for logic.js
+
+// ─── DB helper ────────────────────────────────────────────────────────────
+async function db(sql, params = []) {
+  if (!DB) return { rows: [] }; // demo mode — no persistence
+  const res = await fetch(DB, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ sql, params }),
+  });
+  return res.json(); // { rows: [...] }
+}
+
+// ─── Wrappers for logic.js (unchanged signatures, updated variable refs) ──
+const fmt$ = fmtDollars;
+
+function choresForMember(memberId) {
+  return chores.filter(c => isAssigned(c, memberId, members));
+}
+function _isDone(choreId, memberId) {
+  return isDone(choreId, memberId, completions);
+}
+function _choresDoneThisWeek(memberId) {
+  return choresDoneThisWeek(memberId, chores, members, completions);
+}
+function _earnedCents(memberId) {
+  return earnedCents(memberId, chores, members, completions, settings);
+}
+function _memberColor(id) { return memberColor(id, members); }
+
+// ─── DB lifecycle ─────────────────────────────────────────────────────────
+async function initDb() {
+  // These statements are compatible with both SQLite and Postgres
+  await db(`CREATE TABLE IF NOT EXISTS settings (
+    key   TEXT PRIMARY KEY,
+    value TEXT NOT NULL
+  )`);
+  await db(`CREATE TABLE IF NOT EXISTS chores (
+    id          TEXT PRIMARY KEY,
+    name        TEXT NOT NULL,
+    points      INTEGER NOT NULL DEFAULT 5,
+    assigned_to TEXT NOT NULL DEFAULT '[]',
+    created_at  TEXT NOT NULL
+  )`);
+  await db(`CREATE TABLE IF NOT EXISTS completions (
+    chore_id     TEXT NOT NULL,
+    member_id    TEXT NOT NULL,
+    week         TEXT NOT NULL,
+    completed_at TEXT NOT NULL,
+    PRIMARY KEY (chore_id, member_id, week)
+  )`);
+}
+
+/**
+ * One-time migration: import the old KV blob into the new DB tables.
+ * Idempotent — skips silently if already migrated or no blob exists.
+ */
+async function migrateFromBlob() {
+  const { rows } = await db(`SELECT value FROM settings WHERE key = 'migrated_from_blob'`);
+  if (rows.length > 0) return; // already done
+
+  const markDone = (status = "1") =>
+    db(`INSERT INTO settings (key, value) VALUES ('migrated_from_blob', ?)
+        ON CONFLICT (key) DO UPDATE SET value = excluded.value`, [status]);
+
+  if (!STORE) { await markDone("no-store"); return; }
+
+  try {
+    const res  = await fetch(`${STORE}?key=data`);
+    const json = await res.json();
+    if (!json.value) { await markDone("empty"); return; }
+
+    const old = JSON.parse(json.value);
+    const now = new Date().toISOString();
+
+    // Settings
+    for (const [k, v] of Object.entries(old.settings ?? {})) {
+      await db(`INSERT INTO settings (key, value) VALUES (?, ?)
+                ON CONFLICT (key) DO UPDATE SET value = excluded.value`, [k, String(v)]);
+    }
+
+    // Chores
+    for (const c of old.chores ?? []) {
+      await db(`INSERT INTO chores (id, name, points, assigned_to, created_at)
+                VALUES (?, ?, ?, ?, ?)
+                ON CONFLICT (id) DO NOTHING`,
+        [c.id, c.name, c.points, JSON.stringify(c.assignedTo ?? []), now]);
+    }
+
+    // Completions (can be large — bulk insert in chunks if needed)
+    for (const [week, byChore] of Object.entries(old.completions ?? {})) {
+      for (const [choreId, memberIds] of Object.entries(byChore)) {
+        for (const memberId of memberIds) {
+          await db(`INSERT INTO completions (chore_id, member_id, week, completed_at)
+                    VALUES (?, ?, ?, ?)
+                    ON CONFLICT (chore_id, member_id, week) DO NOTHING`,
+            [choreId, memberId, week, now]);
+        }
+      }
+    }
+
+    await markDone();
+    // Remove the old blob to free KV storage
+    fetch(`${STORE}?key=data`, { method: "DELETE" }).catch(() => {});
+  } catch {
+    await markDone("failed").catch(() => {});
+  }
+}
+
+// ─── Load from DB ─────────────────────────────────────────────────────────
+async function loadSettings() {
+  const { rows } = await db(`SELECT key, value FROM settings WHERE key IN ('centsPerPoint', 'resetDay', 'rewardType', 'minutesPerPoint')`);
+  for (const row of rows) {
+    if (row.key === "centsPerPoint")   settings.centsPerPoint   = parseInt(row.value) || 10;
+    if (row.key === "resetDay")        settings.resetDay        = row.value;
+    if (row.key === "rewardType")      settings.rewardType      = row.value;
+    if (row.key === "minutesPerPoint") settings.minutesPerPoint = parseInt(row.value) || 5;
+  }
+}
+
+async function loadChores() {
+  const { rows } = await db(`SELECT id, name, points, assigned_to FROM chores ORDER BY created_at`);
+  chores = rows.map(r => ({
+    id: r.id, name: r.name, points: r.points,
+    assignedTo: JSON.parse(r.assigned_to ?? "[]"),
+  }));
+}
+
+/**
+ * Load completions for the given weeks into the in-memory `completions` dict.
+ * logic.js functions consume the same shape they always have.
+ */
+async function loadCompletions(weeks) {
+  if (weeks.length === 0 || !DB) return;
+  const placeholders = weeks.map(() => "?").join(",");
+  const { rows } = await db(
+    `SELECT chore_id, member_id, week FROM completions WHERE week IN (${placeholders})`,
+    weeks
+  );
+  for (const row of rows) {
+    if (!completions[row.week]) completions[row.week] = {};
+    if (!completions[row.week][row.chore_id]) completions[row.week][row.chore_id] = [];
+    if (!completions[row.week][row.chore_id].includes(row.member_id)) {
+      completions[row.week][row.chore_id].push(row.member_id);
+    }
+  }
+}
+
+async function loadMembers() {
+  if (!CONTEXT) {
+    members = [
+      { id: "demo-1", name: "Alex",   role: "adult" },
+      { id: "demo-2", name: "Jordan", role: "child" },
+      { id: "demo-3", name: "Casey",  role: "child" },
+    ];
+    return;
+  }
+  try {
+    const res = await fetch(`${CONTEXT}?keys=family.members`);
+    members = ((await res.json())["family.members"]) ?? [];
+  } catch { members = []; }
+}
+
+// ─── Actions ──────────────────────────────────────────────────────────────
+
+/**
+ * Toggle a chore completion.
+ * Each operation touches exactly one row — concurrent toggles by different
+ * family members cannot overwrite each other regardless of timing.
+ */
+async function toggleChore(choreId) {
+  const week     = isoWeek();
+  const memberId = currentMember.id;
+  const done     = _isDone(choreId, memberId);
+
+  if (done) {
+    await db(
+      `DELETE FROM completions WHERE chore_id = ? AND member_id = ? AND week = ?`,
+      [choreId, memberId, week]
+    );
+    if (completions[week]?.[choreId]) {
+      completions[week][choreId] = completions[week][choreId].filter(id => id !== memberId);
+    }
+  } else {
+    // ON CONFLICT DO NOTHING prevents duplicates if somehow called twice
+    await db(
+      `INSERT INTO completions (chore_id, member_id, week, completed_at)
+       VALUES (?, ?, ?, ?)
+       ON CONFLICT (chore_id, member_id, week) DO NOTHING`,
+      [choreId, memberId, week, new Date().toISOString()]
+    );
+    if (!completions[week]) completions[week] = {};
+    if (!completions[week][choreId]) completions[week][choreId] = [];
+    if (!completions[week][choreId].includes(memberId)) completions[week][choreId].push(memberId);
+  }
+
+  render();
+}
+
+async function saveChore(chore) {
+  const now = new Date().toISOString();
+  if (chore.id) {
+    await db(
+      `UPDATE chores SET name = ?, points = ?, assigned_to = ? WHERE id = ?`,
+      [chore.name, chore.points, JSON.stringify(chore.assignedTo), chore.id]
+    );
+    chores = chores.map(c => c.id === chore.id ? chore : c);
+  } else {
+    const id = crypto.randomUUID();
+    await db(
+      `INSERT INTO chores (id, name, points, assigned_to, created_at) VALUES (?, ?, ?, ?, ?)`,
+      [id, chore.name, chore.points, JSON.stringify(chore.assignedTo), now]
+    );
+    chores = [...chores, { ...chore, id }];
+  }
+  closeModal();
+  render();
+}
+
+async function deleteChore(id) {
+  if (!confirm("Delete this chore?")) return;
+  await db(`DELETE FROM chores WHERE id = ?`, [id]);
+  await db(`DELETE FROM completions WHERE chore_id = ?`, [id]);
+  chores = chores.filter(c => c.id !== id);
+  for (const week of Object.values(completions)) delete week[id];
+  render();
+}
+
+// ─── Modal ────────────────────────────────────────────────────────────────
+let modalEl = null;
+function openModal(html) {
+  closeModal();
+  modalEl = document.createElement("div");
+  modalEl.className = "modal-backdrop";
+  modalEl.innerHTML = `<div class="modal">${html}</div>`;
+  modalEl.addEventListener("click", e => { if (e.target === modalEl) closeModal(); });
+  document.body.appendChild(modalEl);
+}
+function closeModal() { modalEl?.remove(); modalEl = null; }
+
+function openChoreModal(chore = null) {
+  const isEdit    = !!chore;
+  const kids      = members.filter(m => m.role === "child");
+  const assignedTo = chore?.assignedTo ?? ["children"];
+
+  const assigneeOptions = [
+    { value: "all",      label: "Everyone" },
+    { value: "children", label: "All kids" },
+    ...kids.map(m => ({ value: m.id, label: m.name })),
+  ];
+
+  const assigneeHtml = assigneeOptions.map(opt => `
+    <button type="button" class="assignee-toggle ${assignedTo.includes(opt.value) ? "selected" : ""}"
+      data-value="${opt.value}" onclick="toggleAssignee(this)">${opt.label}</button>
+  `).join("");
+
+  openModal(`
+    <h3>${isEdit ? "Edit Chore" : "Add Chore"}</h3>
+    <div class="form-group">
+      <label>Chore name</label>
+      <input id="chore-name" type="text" value="${chore?.name ?? ""}" placeholder="Make bed" autofocus />
+    </div>
+    <div class="form-group">
+      <label>Points (1 pt = ${fmt$(settings.centsPerPoint)})</label>
+      <input id="chore-pts" type="number" min="1" max="100" value="${chore?.points ?? 5}" />
+    </div>
+    <div class="form-group">
+      <label>Assigned to</label>
+      <div class="assignee-grid" id="assignee-grid">${assigneeHtml}</div>
+    </div>
+    <div class="modal-actions">
+      <button class="btn btn-ghost" onclick="closeModal()">Cancel</button>
+      <button class="btn btn-primary" onclick="submitChoreModal('${chore?.id ?? ""}')">
+        ${isEdit ? "Save" : "Add Chore"}
+      </button>
+    </div>
+    ${isEdit ? `<div style="margin-top:10px;text-align:center">
+      <button class="btn btn-danger btn-sm" onclick="deleteChore('${chore.id}');closeModal()">Delete chore</button>
+    </div>` : ""}
+  `);
+}
+
+window.toggleAssignee = function(btn) {
+  const val     = btn.dataset.value;
+  const grid    = document.getElementById("assignee-grid");
+  const buttons = [...grid.querySelectorAll(".assignee-toggle")];
+  if (val === "all" || val === "children") {
+    buttons.forEach(b => b.classList.remove("selected"));
+    btn.classList.add("selected");
+  } else {
+    buttons.filter(b => b.dataset.value === "all" || b.dataset.value === "children")
+           .forEach(b => b.classList.remove("selected"));
+    btn.classList.toggle("selected");
+    if (!buttons.some(b => b.classList.contains("selected"))) btn.classList.add("selected");
+  }
+};
+
+window.submitChoreModal = function(existingId) {
+  const name   = document.getElementById("chore-name").value.trim();
+  const points = parseInt(document.getElementById("chore-pts").value) || 5;
+  const selected = [...document.querySelectorAll(".assignee-toggle.selected")].map(b => b.dataset.value);
+  if (!name) { document.getElementById("chore-name").focus(); return; }
+  saveChore({ id: existingId || null, name, points, assignedTo: selected });
+};
+
+window.closeModal  = closeModal;
+window.deleteChore = deleteChore;
+
+// ─── Screens ──────────────────────────────────────────────────────────────
+function renderWhoScreen() {
+  document.getElementById("root").innerHTML = `
+    <div id="who-screen">
+      <h2>Who are you?</h2>
+      <p>Select your name to see your chores for the week</p>
+      <div class="member-grid">
+        ${members.map(m => `
+          <button class="member-btn" onclick="selectMember('${m.id}')">
+            <div class="avatar" style="background:${_memberColor(m.id)}">${initial(m.name)}</div>
+            <span>${m.name}</span>
+            <span class="role-badge">${m.role === "adult" ? "Parent" : "Kid"}</span>
+          </button>
+        `).join("")}
+      </div>
+    </div>
+  `;
+}
+
+window.selectMember = function(id) {
+  currentMember = members.find(m => m.id === id);
+  render();
+};
+
+function fmtMin(m) {
+  if (m < 60) return `${m}m`;
+  const h = Math.floor(m / 60), rem = m % 60;
+  return rem > 0 ? `${h}h ${rem}m` : `${h}h`;
+}
+
+function renderKidView() {
+  const myChores      = choresForMember(currentMember.id);
+  const doneCount     = _choresDoneThisWeek(currentMember.id).length;
+  const earned        = _earnedCents(currentMember.id);
+  const totalPossible = myChores.reduce((s, c) => s + c.points * settings.centsPerPoint, 0);
+
+  const pts2min = c => settings.centsPerPoint > 0
+    ? Math.round((c / settings.centsPerPoint) * settings.minutesPerPoint) : 0;
+  const earnedMin   = pts2min(earned);
+  const possibleMin = pts2min(totalPossible);
+
+  const showMoney = settings.rewardType !== "screen_time";
+  const showTime  = settings.rewardType !== "money";
+
+  const earningsAmount = showMoney && showTime
+    ? `<div class="amount">${fmt$(earned)}</div><div style="font-size:.95rem;font-weight:700;color:var(--accent)">${fmtMin(earnedMin)} screen time</div>`
+    : showTime
+    ? `<div class="amount">${fmtMin(earnedMin)}<span style="font-size:.7em;opacity:.7"> screen time</span></div>`
+    : `<div class="amount">${fmt$(earned)}</div>`;
+
+  const earningsPossible = showMoney && showTime
+    ? `of ${fmt$(totalPossible)} / ${fmtMin(possibleMin)} possible`
+    : showTime
+    ? `of ${fmtMin(possibleMin)} possible`
+    : `of ${fmt$(totalPossible)} possible`;
+
+  const choresHtml = myChores.length === 0
+    ? `<div class="empty">No chores assigned yet. Ask a parent to add some!</div>`
+    : myChores.map(c => {
+        const done = _isDone(c.id, currentMember.id);
+        return `
+          <div class="chore-row">
+            <button class="chore-check ${done ? "done" : ""}" onclick="toggleChore('${c.id}')">
+              ${done ? "✓" : ""}
+            </button>
+            <span class="chore-name ${done ? "done" : ""}">${c.name}</span>
+            <span class="chore-pts ${done ? "done" : ""}">${c.points} pt${c.points !== 1 ? "s" : ""}</span>
+          </div>
+        `;
+      }).join("");
+
+  document.getElementById("root").innerHTML = `
+    <div class="nav-bar">
+      <span class="who">Chores for <strong>${currentMember.name}</strong></span>
+      <button class="btn btn-ghost btn-sm" onclick="switchMember()">Switch</button>
+    </div>
+
+    <div class="earnings-bar">
+      <div>
+        <div class="label">This week's earnings</div>
+        <div class="pts">${doneCount} of ${myChores.length} chore${myChores.length !== 1 ? "s" : ""} done</div>
+      </div>
+      <div style="text-align:right">
+        ${earningsAmount}
+        <div class="pts">${earningsPossible}</div>
+      </div>
+    </div>
+
+    <div class="section-title">${weekLabel(new Date())}</div>
+    <div class="card">${choresHtml}</div>
+  `;
+}
+
+function renderAdminView() {
+  const tabs    = ["overview", "chores", "settings"];
+  const tabHtml = `
+    <div class="tabs">
+      ${tabs.map(t => `<button class="tab ${adminTab === t ? "active" : ""}" onclick="setAdminTab('${t}')">
+        ${t.charAt(0).toUpperCase() + t.slice(1)}
+      </button>`).join("")}
+    </div>
+  `;
+
+  let contentHtml = "";
+
+  if (adminTab === "overview") {
+    const kids = members.filter(m => m.role === "child");
+    const kidsHtml = kids.length === 0
+      ? `<div class="empty">No kids found. Add family members in the hub.</div>`
+      : kids.map(kid => {
+          const myChores = choresForMember(kid.id);
+          const done     = _choresDoneThisWeek(kid.id);
+          const earned   = _earnedCents(kid.id);
+          const pillsHtml = myChores.length === 0
+            ? `<span style="font-size:.8rem;color:var(--muted)">No chores assigned</span>`
+            : myChores.map(c => {
+                const d = _isDone(c.id, kid.id);
+                return `<span class="kid-chore-pill ${d ? "done" : ""}">${d ? "✓ " : ""}${c.name}</span>`;
+              }).join("");
+          return `
+            <div class="kid-card">
+              <div class="kid-card-header">
+                <div class="avatar" style="background:${_memberColor(kid.id)}">${initial(kid.name)}</div>
+                <div>
+                  <div class="name">${kid.name}</div>
+                  <div style="font-size:.78rem;color:var(--muted)">${done.length}/${myChores.length} done this week</div>
+                </div>
+                <div class="earned">${fmt$(earned)}</div>
+              </div>
+              <div class="kid-chore-pills">${pillsHtml}</div>
+            </div>
+          `;
+        }).join("");
+    contentHtml = `<div class="section-title">${weekLabel(new Date())}</div>${kidsHtml}`;
+  }
+
+  if (adminTab === "chores") {
+    const choreListHtml = chores.length === 0
+      ? `<div class="empty">No chores yet. Add your first one!</div>`
+      : chores.map(c => {
+          const assignLabel = c.assignedTo.includes("all") ? "Everyone"
+            : c.assignedTo.includes("children") ? "All kids"
+            : c.assignedTo.map(id => members.find(m => m.id === id)?.name ?? id).join(", ");
+          return `
+            <div class="chore-manage-row">
+              <div class="chore-info">
+                <div class="name">${c.name}</div>
+                <div class="meta">${c.points} pt${c.points !== 1 ? "s" : ""} · ${assignLabel}</div>
+              </div>
+              <button class="btn btn-ghost btn-sm" onclick='editChore("${c.id}")'>Edit</button>
+            </div>
+          `;
+        }).join("");
+    contentHtml = `
+      <div style="display:flex;justify-content:flex-end;margin-bottom:12px">
+        <button class="btn btn-primary btn-sm" onclick="openChoreModal()">+ Add chore</button>
+      </div>
+      <div class="card">${choreListHtml}</div>
+    `;
+  }
+
+  if (adminTab === "settings") {
+    const rewardOpts = [["money","Money"],["screen_time","Screen Time"],["both","Money & Screen Time"]]
+      .map(([v,l]) => `<option value="${v}" ${settings.rewardType === v ? "selected" : ""}>${l}</option>`).join("");
+    contentHtml = `
+      <div class="card">
+        <div class="setting-row">
+          <div>
+            <div class="label">Reward type</div>
+            <div class="sublabel">What kids earn for completing chores</div>
+          </div>
+          <select onchange="updateSetting('rewardType', this.value)">${rewardOpts}</select>
+        </div>
+        ${settings.rewardType !== "screen_time" ? `
+        <div class="setting-row">
+          <div>
+            <div class="label">Points per dollar</div>
+            <div class="sublabel">Kids earn ${fmt$(settings.centsPerPoint)} per point</div>
+          </div>
+          <input type="number" min="1" max="1000" value="${settings.centsPerPoint}"
+            onchange="updateSetting('centsPerPoint', parseInt(this.value))" />
+        </div>` : ""}
+        ${settings.rewardType !== "money" ? `
+        <div class="setting-row">
+          <div>
+            <div class="label">Minutes per point</div>
+            <div class="sublabel">Screen time earned per chore point</div>
+          </div>
+          <input type="number" min="1" max="120" value="${settings.minutesPerPoint}"
+            onchange="updateSetting('minutesPerPoint', parseInt(this.value))" />
+        </div>` : ""}
+        <div class="setting-row">
+          <div>
+            <div class="label">Reset day</div>
+            <div class="sublabel">Chores reset at the start of each week</div>
+          </div>
+          <select onchange="updateSetting('resetDay', this.value)">
+            ${["monday","tuesday","wednesday","thursday","friday","saturday","sunday"].map(d =>
+              `<option value="${d}" ${settings.resetDay === d ? "selected" : ""}>${d.charAt(0).toUpperCase() + d.slice(1)}</option>`
+            ).join("")}
+          </select>
+        </div>
+      </div>
+    `;
+  }
+
+  document.getElementById("root").innerHTML = `
+    <div class="nav-bar">
+      <span class="who">Admin: <strong>${currentMember.name}</strong></span>
+      <button class="btn btn-ghost btn-sm" onclick="switchMember()">Switch</button>
+    </div>
+    ${tabHtml}
+    ${contentHtml}
+  `;
+}
+
+window.setAdminTab = function(tab) { adminTab = tab; render(); };
+
+window.editChore = function(id) {
+  const chore = chores.find(c => c.id === id);
+  if (chore) openChoreModal(chore);
+};
+
+window.updateSetting = function(key, val) {
+  settings[key] = val;
+  db(`INSERT INTO settings (key, value) VALUES (?, ?)
+      ON CONFLICT (key) DO UPDATE SET value = excluded.value`, [key, String(val)]).catch(() => {});
+  render();
+};
+
+window.toggleChore    = toggleChore;
+window.openChoreModal = openChoreModal;
+window.switchMember   = () => { currentMember = null; render(); };
+
+function render() {
+  if (!currentMember)               { renderWhoScreen(); return; }
+  if (currentMember.role === "adult") renderAdminView();
+  else                                renderKidView();
+}
+
+// ─── Weekly summary ────────────────────────────────────────────────────────
+// Fires once per week. Queries previous week completions from DB rather than
+// loading the entire history blob, then posts a recap to the message board.
+async function checkAndSendWeeklySummary() {
+  if (!DB) return;
+
+  const prevWeek = getPreviousIsoWeek();
+
+  // Read lastSummaryWeek from the DB settings table
+  const { rows: settRows } = await db(
+    `SELECT value FROM settings WHERE key = 'lastSummaryWeek'`
+  );
+  const lastSummaryWeek = settRows[0]?.value ?? null;
+  if (lastSummaryWeek === prevWeek) return;
+
+  const markDone = () => db(
+    `INSERT INTO settings (key, value) VALUES ('lastSummaryWeek', ?)
+     ON CONFLICT (key) DO UPDATE SET value = excluded.value`,
+    [prevWeek]
+  ).catch(() => {});
+
+  // Check if previous week had any completions
+  const { rows: countRows } = await db(
+    `SELECT COUNT(*) AS n FROM completions WHERE week = ?`, [prevWeek]
+  );
+  const hasActivity = (countRows[0]?.n ?? 0) > 0;
+  if (!hasActivity) { await markDone(); return; }
+
+  const kids = members.filter(m => m.role === "child");
+  if (kids.length === 0) { await markDone(); return; }
+
+  // Load just the previous week's completions — no full-history load needed
+  const { rows: compRows } = await db(
+    `SELECT chore_id, member_id FROM completions WHERE week = ?`, [prevWeek]
+  );
+  const prevCompletions = { [prevWeek]: {} };
+  for (const row of compRows) {
+    if (!prevCompletions[prevWeek][row.chore_id]) prevCompletions[prevWeek][row.chore_id] = [];
+    prevCompletions[prevWeek][row.chore_id].push(row.member_id);
+  }
+
+  const rangeLabel = previousWeekLabel();
+  const lines      = [`📊 Chore recap — ${rangeLabel}`];
+
+  const fmtMinLocal = m => m < 60 ? `${m}m` : m % 60 === 0 ? `${m/60}h` : `${Math.floor(m/60)}h ${m%60}m`;
+
+  for (const kid of kids) {
+    const assigned = choresForMember(kid.id);
+    if (assigned.length === 0) continue;
+    const done    = choresDoneThisWeek(kid.id, chores, members, prevCompletions, prevWeek);
+    const cents   = earnedCents(kid.id, chores, members, prevCompletions, settings, prevWeek);
+    const minutes = (settings.rewardType !== "money" && settings.centsPerPoint > 0)
+      ? Math.round((cents / settings.centsPerPoint) * settings.minutesPerPoint) : 0;
+    const allDone  = done.length >= assigned.length;
+    const earnDesc = settings.rewardType === "screen_time" ? `${fmtMinLocal(minutes)} screen time`
+      : settings.rewardType === "both" ? `${fmt$(cents)} + ${fmtMinLocal(minutes)} screen time`
+      : fmt$(cents);
+    lines.push(`${allDone ? "✅" : "🔲"} ${kid.name}: ${done.length}/${assigned.length} chores · ${earnDesc} earned`);
+  }
+
+  const messageBody = lines.join("\n");
+  await fetch("/api/messages", {
+    method: "POST", headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ author_name: "Chore Tracker", body: messageBody }),
+  }).catch(() => {});
+
+  // Publish per-member allowance events — piggy-bank app consumes these to auto-deposit
+  const EVENTS_URL = window.__EVENTS_URL ?? "/api/events";
+  for (const kid of kids) {
+    const assigned = choresForMember(kid.id);
+    if (assigned.length === 0) continue;
+    const done    = choresDoneThisWeek(kid.id, chores, members, prevCompletions, prevWeek);
+    const cents   = earnedCents(kid.id, chores, members, prevCompletions, settings, prevWeek);
+    const minutes = (settings.rewardType !== "money" && settings.centsPerPoint > 0)
+      ? Math.round((cents / settings.centsPerPoint) * settings.minutesPerPoint) : 0;
+    await fetch(EVENTS_URL, {
+      method: "POST", headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        source_app_id: APP_ID,
+        type: "allowance.weekly",
+        subject_id: kid.id,
+        payload: {
+          member_id:       kid.id,
+          member_name:     kid.name,
+          week:            prevWeek,
+          cents_earned:    cents,
+          minutes_earned:  minutes,
+          reward_type:     settings.rewardType,
+          chores_done:     done.length,
+          chores_assigned: assigned.length,
+        },
+      }),
+    }).catch(() => {});
+  }
+
+  await fetch("/api/notifications/send", {
+    method: "POST", headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({
+      title: `Chore recap — ${rangeLabel}`,
+      body: lines.slice(1).join(" · "),
+      url: `/run/${APP_ID}`,
+    }),
+  }).catch(() => {});
+
+  await markDone();
+}
+
+// ─── Init ─────────────────────────────────────────────────────────────────
+(async () => {
+  await loadMembers();
+
+  if (DB) {
+    await initDb();
+    await migrateFromBlob();           // no-op on second+ load
+    await loadSettings();
+    await loadChores();
+    await loadCompletions([isoWeek(), getPreviousIsoWeek()]);
+  }
+
+  if (HUB_MEMBER) {
+    currentMember = members.find(m => m.id === HUB_MEMBER.id) ?? {
+      id: HUB_MEMBER.id, name: HUB_MEMBER.name, role: HUB_MEMBER.role,
+    };
+  }
+
+  render();
+  checkAndSendWeeklySummary().catch(() => {}); // fire-and-forget
+})();
+</script>
+</body>
+</html>

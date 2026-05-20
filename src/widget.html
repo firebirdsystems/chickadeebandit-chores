@@ -1,0 +1,267 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Chores Widget</title>
+  <style>
+    *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+
+    body {
+      font-family: var(--hub-font, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif);
+      font-size: 13px;
+      background: #fff;
+      color: #111827;
+      height: 100vh;
+      overflow: hidden;
+      display: flex;
+      flex-direction: column;
+    }
+
+    .header {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      padding: 10px 14px 8px;
+      border-bottom: 1px solid #e5e7eb;
+      flex-shrink: 0;
+    }
+    .header-week  { font-size: 11px; color: #6b7280; }
+    .header-pts   { font-size: 11px; font-weight: 600; color: #059669; }
+
+    .chore-list {
+      flex: 1;
+      overflow-y: auto;
+      padding: 4px 0;
+    }
+
+    .chore-row {
+      display: flex;
+      align-items: center;
+      gap: 10px;
+      padding: 6px 14px;
+      cursor: pointer;
+      transition: background .1s;
+      border-bottom: 1px solid #f3f4f6;
+    }
+    .chore-row:last-child { border-bottom: none; }
+    .chore-row:hover { background: #f9fafb; }
+
+    .check {
+      width: 18px; height: 18px;
+      border-radius: 50%;
+      border: 2px solid #d1d5db;
+      flex-shrink: 0;
+      display: flex; align-items: center; justify-content: center;
+      transition: all .15s;
+      font-size: 10px;
+      color: transparent;
+    }
+    .chore-row.done .check {
+      background: #059669;
+      border-color: #059669;
+      color: white;
+    }
+
+    .chore-name {
+      flex: 1;
+      font-size: 12.5px;
+      white-space: nowrap;
+      overflow: hidden;
+      text-overflow: ellipsis;
+    }
+    .chore-row.done .chore-name {
+      color: #9ca3af;
+      text-decoration: line-through;
+    }
+
+    .chore-pts {
+      font-size: 11px;
+      font-weight: 600;
+      color: #6b7280;
+      flex-shrink: 0;
+    }
+    .chore-row.done .chore-pts { color: #d1d5db; }
+
+    .footer {
+      padding: 7px 14px;
+      border-top: 1px solid #e5e7eb;
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      flex-shrink: 0;
+      background: #f9fafb;
+    }
+    .footer-earned { font-size: 11px; color: #6b7280; }
+    .footer-earned strong { color: #059669; }
+    .open-link {
+      font-size: 11px;
+      font-weight: 600;
+      color: #111827;
+      text-decoration: none;
+    }
+    .open-link:hover { text-decoration: underline; }
+
+    .empty {
+      flex: 1;
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      justify-content: center;
+      color: #9ca3af;
+      font-size: 12px;
+      gap: 4px;
+      padding: 12px;
+    }
+    .loading { color: #9ca3af; padding: 20px 14px; font-size: 12px; }
+  </style>
+</head>
+<body>
+<script type="module">
+import { memberColor, initial, esc, isAdult } from "/hub-sdk.js";
+import { isAssigned, isDone, isoWeek, weekLabel, earnedCents, fmtDollars } from "./logic.js";
+
+const CONTEXT    = window.__CONTEXT_URL ?? "";
+const DB         = window.__DB_URL      ?? "";
+const EVENTS     = window.__EVENTS_URL  ?? "";
+const APP_ID     = window.__APP_ID      ?? "chore-tracker";
+const HUB_MEMBER = window.__CURRENT_MEMBER ?? null;
+
+let members     = [];
+let chores      = [];
+let doneIds     = new Set();   // chore IDs done by current member this week
+let settings    = { centsPerPoint: 10 };
+const week      = isoWeek();
+
+async function dbq(sql, params = []) {
+  if (!DB) return { rows: [] };
+  const res = await fetch(DB, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ sql, params }),
+  });
+  return res.json();
+}
+
+async function loadMembers() {
+  if (!CONTEXT) {
+    members = [{ id: "demo", name: "You", role: "child" }];
+    return;
+  }
+  try {
+    const res = await fetch(`${CONTEXT}?keys=family.members`);
+    members = ((await res.json())["family.members"]) ?? [];
+  } catch { members = []; }
+}
+
+async function load() {
+  const memberId = HUB_MEMBER?.id;
+  if (!memberId) { render(); return; }
+
+  const [{ rows: choreRows }, { rows: settRows }, { rows: doneRows }] = await Promise.all([
+    dbq(`SELECT id, name, points, assigned_to FROM chores ORDER BY created_at`),
+    dbq(`SELECT key, value FROM settings`),
+    dbq(`SELECT chore_id FROM completions WHERE member_id = ? AND week = ?`, [memberId, week]),
+  ]);
+
+  chores = choreRows.map(r => ({ ...r, assignedTo: JSON.parse(r.assigned_to ?? "[]") }));
+  for (const { key, value } of settRows) {
+    if (key === "centsPerPoint") settings.centsPerPoint = Number(value);
+  }
+  doneIds = new Set(doneRows.map(r => r.chore_id));
+
+  render();
+}
+
+async function toggle(choreId) {
+  const memberId = HUB_MEMBER?.id;
+  if (!memberId) return;
+  if (doneIds.has(choreId)) {
+    await dbq(`DELETE FROM completions WHERE chore_id=? AND member_id=? AND week=?`,
+      [choreId, memberId, week]);
+    doneIds.delete(choreId);
+  } else {
+    await dbq(
+      `INSERT OR IGNORE INTO completions (chore_id, member_id, week, completed_at) VALUES (?,?,?,?)`,
+      [choreId, memberId, week, new Date().toISOString()]
+    );
+    doneIds.add(choreId);
+  }
+  render();
+}
+
+function render() {
+  const memberId = HUB_MEMBER?.id;
+
+  if (!memberId) {
+    document.body.innerHTML = `
+      <div class="header"></div>
+      <div class="empty">
+        <span>Sign in to see your chores</span>
+        <a href="/run/${APP_ID}" style="color:#111827;font-weight:600;font-size:11px">Open app →</a>
+      </div>`;
+    return;
+  }
+
+  const myChores = chores.filter(c => isAssigned(c, memberId, members));
+
+  const header = `
+    <div class="header">
+      <span class="header-week">${weekLabel()}</span>
+      <span class="header-pts">${doneIds.size}/${myChores.length} done</span>
+    </div>`;
+
+  let rows;
+  if (myChores.length === 0 && !DB) {
+    rows = `<div class="empty"><span>No chores yet</span><a href="/run/${APP_ID}" style="color:#111827;font-weight:600;font-size:11px">Set up chores →</a></div>`;
+  } else if (myChores.length === 0) {
+    rows = `<div class="empty"><span>No chores assigned to you</span></div>`;
+  } else {
+    // Show undone first, then done
+    const sorted = [...myChores].sort((a, b) => {
+      const ad = doneIds.has(a.id), bd = doneIds.has(b.id);
+      return ad === bd ? 0 : ad ? 1 : -1;
+    });
+    rows = `<div class="chore-list">
+      ${sorted.map(c => {
+        const done = doneIds.has(c.id);
+        return `<div class="chore-row ${done ? "done" : ""}" onclick="doToggle('${c.id}')">
+          <div class="check">${done ? "✓" : ""}</div>
+          <span class="chore-name">${c.name}</span>
+          <span class="chore-pts">${c.points}pt${c.points !== 1 ? "s" : ""}</span>
+        </div>`;
+      }).join("")}
+    </div>`;
+  }
+
+  // Compute earned cents from doneIds
+  const earnedPts = [...doneIds].reduce((sum, id) => {
+    const c = chores.find(c => c.id === id);
+    return sum + (c?.points ?? 0);
+  }, 0);
+  const earned = fmtDollars(earnedPts * settings.centsPerPoint);
+
+  const footer = `
+    <div class="footer">
+      <span class="footer-earned">Earned this week: <strong>${earned}</strong></span>
+      <a class="open-link" href="/run/${APP_ID}">All chores →</a>
+    </div>`;
+
+  document.body.innerHTML = header + rows + footer;
+}
+
+window.doToggle = id => toggle(id).catch(() => {});
+
+(async () => {
+  await loadMembers();
+  await load();
+
+  // Refresh widget when new allowance events arrive (e.g. weekly summary posted)
+  if (EVENTS) {
+    const { createEventPoller } = await import("/hub-sdk.js");
+    createEventPoller(EVENTS, "allowance.weekly", () => load(), 60_000);
+  }
+})();
+</script>
+</body>
+</html>

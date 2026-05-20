@@ -1,0 +1,27 @@
+{
+  "id": "chore-tracker",
+  "name": "Chores & Allowance",
+  "version": "1.0.0",
+  "description": "Assign chores to kids, track completions, and calculate weekly allowance automatically.",
+  "entrypoint": "index.html",
+  "runtime": "static",
+  "category": "family",
+  "tags": ["kids", "chores", "allowance", "finance"],
+  "data_access": {
+    "reads": ["family.members"],
+    "writes": []
+  },
+  "permissions": {
+    "default_audience": "everyone",
+    "requires_approval": false
+  },
+  "storage": "db",
+  "publishes": ["allowance.weekly"],
+  "alert_on": ["allowance.weekly"],
+  "widget": { "label": "Chores", "size": "small" },
+  "resource_limits": {
+    "max_store_bytes": 524288,
+    "max_store_reads_per_day": 500,
+    "max_store_writes_per_day": 200
+  }
+}
