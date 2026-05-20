@@ -70,34 +70,34 @@ describe("memberColor", () => {
 // ── isoWeek() ─────────────────────────────────────────────────────────────────
 describe("isoWeek", () => {
   it("returns a string matching YYYY-WNN format", () => {
-    expect(isoWeek(new Date("2026-05-17"))).toMatch(/^\d{4}-W\d{2}$/);
+    expect(isoWeek(new Date("2026-05-17T12:00:00Z"))).toMatch(/^\d{4}-W\d{2}$/);
   });
 
   it("returns correct week for a known date — 2026-05-17 is W20", () => {
-    expect(isoWeek(new Date("2026-05-17"))).toBe("2026-W20");
+    expect(isoWeek(new Date("2026-05-17T12:00:00Z"))).toBe("2026-W20");
   });
 
   it("handles year boundary correctly — 2025-12-29 belongs to 2026-W01", () => {
     // ISO: week containing first Thursday of year
-    expect(isoWeek(new Date("2025-12-29"))).toBe("2026-W01");
+    expect(isoWeek(new Date("2025-12-29T12:00:00Z"))).toBe("2026-W01");
   });
 
   it("handles year boundary — 2026-01-01 is 2026-W01", () => {
-    expect(isoWeek(new Date("2026-01-01"))).toBe("2026-W01");
+    expect(isoWeek(new Date("2026-01-01T12:00:00Z"))).toBe("2026-W01");
   });
 
   it("same week for Mon through Sun of the same week", () => {
-    const week = isoWeek(new Date("2026-05-11")); // Monday
-    expect(isoWeek(new Date("2026-05-12"))).toBe(week); // Tuesday
-    expect(isoWeek(new Date("2026-05-17"))).toBe(week); // Sunday
+    const week = isoWeek(new Date("2026-05-11T12:00:00Z")); // Monday
+    expect(isoWeek(new Date("2026-05-12T12:00:00Z"))).toBe(week); // Tuesday
+    expect(isoWeek(new Date("2026-05-17T12:00:00Z"))).toBe(week); // Sunday
   });
 
   it("different weeks for dates in adjacent weeks", () => {
-    expect(isoWeek(new Date("2026-05-10"))).not.toBe(isoWeek(new Date("2026-05-11")));
+    expect(isoWeek(new Date("2026-05-10T12:00:00Z"))).not.toBe(isoWeek(new Date("2026-05-11T12:00:00Z")));
   });
 
   it("pads single-digit week numbers with leading zero", () => {
-    const w = isoWeek(new Date("2026-01-05")); // Week 2
+    const w = isoWeek(new Date("2026-01-05T12:00:00Z")); // Week 2
     expect(w).toMatch(/-W\d{2}$/);
     const num = parseInt(w.split("-W")[1]);
     expect(String(num).padStart(2, "0")).toBe(w.split("-W")[1]);
@@ -107,22 +107,22 @@ describe("isoWeek", () => {
 // ── weekLabel() ───────────────────────────────────────────────────────────────
 describe("weekLabel", () => {
   it("returns a string containing a dash separator", () => {
-    expect(weekLabel(new Date("2026-05-17"))).toContain("–");
+    expect(weekLabel(new Date("2026-05-17T12:00:00Z"))).toContain("–");
   });
 
   it("starts on Monday and ends on Sunday for a mid-week date", () => {
-    const label = weekLabel(new Date("2026-05-13")); // Wednesday
+    const label = weekLabel(new Date("2026-05-13T12:00:00Z")); // Wednesday
     expect(label).toContain("May 11");  // Monday
     expect(label).toContain("May 17");  // Sunday
   });
 
   it("returns correct range when given a Monday", () => {
-    const label = weekLabel(new Date("2026-05-11")); // Monday
+    const label = weekLabel(new Date("2026-05-11T12:00:00Z")); // Monday
     expect(label.startsWith("May 11")).toBe(true);
   });
 
   it("returns correct range when given a Sunday", () => {
-    const label = weekLabel(new Date("2026-05-17")); // Sunday
+    const label = weekLabel(new Date("2026-05-17T12:00:00Z")); // Sunday
     expect(label.endsWith("May 17")).toBe(true);
   });
 });

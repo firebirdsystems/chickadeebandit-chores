@@ -3,8 +3,8 @@
  * No DOM, no fetch — importable in both browser and test environments.
  */
 
-// Shared utilities (memberColor, initial, esc, isAdult) live in /hub-sdk.js.
-// This file exports chores-specific logic only.
+// Shared utilities — sourced from shared.js (mirrors hub-sdk.js) for testability.
+export { AVATAR_COLORS, MEMBER_COLORS, memberColor, initial, esc, isAdult, formatRelativeDate } from "./shared.js";
 
 /**
  * ISO 8601 week string ("YYYY-WNN") for a given date.
