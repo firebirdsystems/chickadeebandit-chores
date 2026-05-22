@@ -425,7 +425,8 @@ function _memberColor(id) { return memberColor(id, members); }
 
 // ─── DB lifecycle ─────────────────────────────────────────────────────────
 async function initDb() {
-  // Schema is managed by hub migrations (migrations/001_init.sql)}
+  // Schema is managed by hub migrations (migrations/001_init.sql)
+}
 
 /**
  * One-time migration: import the old KV blob into the new DB tables.
