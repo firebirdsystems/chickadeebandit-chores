@@ -372,7 +372,7 @@
 </div>
 
 <script type="module">
-import { memberColor, initial, esc, isAdult } from "/hub-sdk.js";
+import { memberColor, initial, esc, isAdult, hubConfirm } from "/hub-sdk.js";
 import {
   isoWeek, weekLabel, isAssigned, isDone, choresDoneThisWeek,
   earnedCents, fmtDollars, getPreviousIsoWeek, previousWeekLabel,
@@ -595,7 +595,7 @@ async function saveChore(chore) {
 }
 
 async function deleteChore(id) {
-  if (!confirm("Delete this chore?")) return;
+  if (!await hubConfirm({ message: "Delete this chore?", description: "The chore and its history will be permanently removed.", confirmLabel: "Delete" })) return;
   await db(`DELETE FROM chores WHERE id = ?`, [id]);
   await db(`DELETE FROM completions WHERE chore_id = ?`, [id]);
   chores = chores.filter(c => c.id !== id);
