@@ -389,6 +389,7 @@ const HUB_MEMBER = window.__CURRENT_MEMBER ?? null;
 let members       = [];
 let currentMember = null;
 let adminTab      = "overview";
+let pendingDeepLinkChoreId = null;
 
 // App data — now backed by separate DB tables instead of one blob
 let settings    = { centsPerPoint: 10, resetDay: "monday", rewardType: "money", minutesPerPoint: 5 };
@@ -704,6 +705,9 @@ function renderWhoScreen() {
 
 window.selectMember = function(id) {
   currentMember = members.find(m => m.id === id);
+  if (pendingDeepLinkChoreId) {
+    pendingDeepLinkChoreId = null;
+  }
   render();
 };
 
@@ -1030,6 +1034,17 @@ async function checkAndSendWeeklySummary() {
   await markDone();
 }
 
+// ─── Deep link ────────────────────────────────────────────────────────────
+function handleDeepLink() {
+  const choreId = new URLSearchParams(window.location.search).get("choreId");
+  if (!choreId) return;
+  if (currentMember) {
+    render();
+  } else {
+    pendingDeepLinkChoreId = choreId;
+  }
+}
+
 // ─── Init ─────────────────────────────────────────────────────────────────
 (async () => {
   await loadMembers();
@@ -1049,6 +1064,7 @@ async function checkAndSendWeeklySummary() {
   }
 
   render();
+  handleDeepLink();
   checkAndSendWeeklySummary().catch(() => {}); // fire-and-forget
 })();
 </script>
