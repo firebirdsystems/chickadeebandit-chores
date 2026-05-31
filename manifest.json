@@ -29,6 +29,7 @@
   "alert_on": [
     "allowance.weekly"
   ],
+  "nav": { "label": "Chores" },
   "widget": {
     "label": "Chores",
     "size": "small"
