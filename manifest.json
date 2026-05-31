@@ -38,5 +38,10 @@
     "max_store_reads_per_day": 500,
     "max_store_writes_per_day": 200
   },
-  "icon": "📋"
+  "icon": "📋",
+  "ai_access": {
+    "allowed": true,
+    "mode": "read",
+    "db_exports": ["all_chores", "this_weeks_completions"]
+  }
 }
