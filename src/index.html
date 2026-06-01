@@ -686,12 +686,13 @@ window.deleteChore = deleteChore;
 
 // ─── Screens ──────────────────────────────────────────────────────────────
 function renderWhoScreen() {
+  const switchable = members.filter(m => m.id === HUB_MEMBER?.id || (m.role === "child" && !m.email));
   document.getElementById("root").innerHTML = `
     <div id="who-screen">
       <h2>Who are you?</h2>
       <p>Select your name to see your chores for the week</p>
       <div class="member-grid">
-        ${members.map(m => `
+        ${switchable.map(m => `
           <button class="member-btn" onclick="selectMember('${m.id}')">
             <div class="avatar" style="background:${_memberColor(m.id)}">${initial(m.name)}</div>
             <span>${m.name}</span>
@@ -761,7 +762,7 @@ function renderKidView() {
   document.getElementById("root").innerHTML = `
     <div class="nav-bar">
       <span class="who">Chores for <strong>${currentMember.name}</strong></span>
-      <button class="btn btn-ghost btn-sm" onclick="switchMember()">Switch</button>
+      ${members.some(m => m.role === "child" && !m.email) ? `<button class="btn btn-ghost btn-sm" onclick="switchMember()">Switch</button>` : ""}
     </div>
 
     <div class="earnings-bar">
@@ -896,7 +897,7 @@ function renderAdminView() {
   document.getElementById("root").innerHTML = `
     <div class="nav-bar">
       <span class="who">Admin: <strong>${currentMember.name}</strong></span>
-      <button class="btn btn-ghost btn-sm" onclick="switchMember()">Switch</button>
+      ${members.some(m => m.role === "child" && !m.email) ? `<button class="btn btn-ghost btn-sm" onclick="switchMember()">Switch</button>` : ""}
     </div>
     ${tabHtml}
     ${contentHtml}
