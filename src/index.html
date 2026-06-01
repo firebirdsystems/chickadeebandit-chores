@@ -439,7 +439,7 @@ async function migrateFromBlob() {
 
   const markDone = (status = "1") =>
     db(`INSERT INTO settings (key, value) VALUES ('migrated_from_blob', ?)
-        ON CONFLICT (key) DO UPDATE SET value = excluded.value`, [status]);
+        ON CONFLICT (household_id, key) DO UPDATE SET value = excluded.value`, [status]);
 
   if (!STORE) { await markDone("no-store"); return; }
 
@@ -454,7 +454,7 @@ async function migrateFromBlob() {
     // Settings
     for (const [k, v] of Object.entries(old.settings ?? {})) {
       await db(`INSERT INTO settings (key, value) VALUES (?, ?)
-                ON CONFLICT (key) DO UPDATE SET value = excluded.value`, [k, String(v)]);
+                ON CONFLICT (household_id, key) DO UPDATE SET value = excluded.value`, [k, String(v)]);
     }
 
     // Chores
@@ -913,7 +913,7 @@ window.editChore = function(id) {
 window.updateSetting = function(key, val) {
   settings[key] = val;
   db(`INSERT INTO settings (key, value) VALUES (?, ?)
-      ON CONFLICT (key) DO UPDATE SET value = excluded.value`, [key, String(val)]).catch(() => {});
+      ON CONFLICT (household_id, key) DO UPDATE SET value = excluded.value`, [key, String(val)]).catch(() => {});
   render();
 };
 
@@ -944,7 +944,7 @@ async function checkAndSendWeeklySummary() {
 
   const markDone = () => db(
     `INSERT INTO settings (key, value) VALUES ('lastSummaryWeek', ?)
-     ON CONFLICT (key) DO UPDATE SET value = excluded.value`,
+     ON CONFLICT (household_id, key) DO UPDATE SET value = excluded.value`,
     [prevWeek]
   ).catch(() => {});
 
