@@ -1048,15 +1048,20 @@ function handleDeepLink() {
 
 // ─── Init ─────────────────────────────────────────────────────────────────
 (async () => {
-  await loadMembers();
-
-  if (DB) {
-    await initDb();
-    await migrateFromBlob();           // no-op on second+ load
-    await loadSettings();
-    await loadChores();
-    await loadCompletions([isoWeek(), getPreviousIsoWeek()]);
-  }
+  await Promise.all([
+    loadMembers(),
+    (async () => {
+      if (DB) {
+        await initDb();
+        await migrateFromBlob();       // no-op on second+ load
+        await Promise.all([
+          loadSettings(),
+          loadChores(),
+          loadCompletions([isoWeek(), getPreviousIsoWeek()]),
+        ]);
+      }
+    })(),
+  ]);
 
   if (HUB_MEMBER) {
     currentMember = members.find(m => m.id === HUB_MEMBER.id) ?? {
