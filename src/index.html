@@ -1007,15 +1007,18 @@ async function checkAndSendWeeklySummary() {
       method: "POST", headers: { "Content-Type": "application/json" },
       body: JSON.stringify({
         source_app_id: APP_ID,
-        type: "allowance.weekly",
+        type: "reward.earned",
         subject_id: kid.id,
         payload: {
           member_id:       kid.id,
           member_name:     kid.name,
-          week:            prevWeek,
           cents_earned:    cents,
           minutes_earned:  minutes,
           reward_type:     settings.rewardType,
+          note:            `Chores — week of ${prevWeek}`,
+          source_label:    "Chores",
+          // extra context (not required by consumers)
+          week:            prevWeek,
           chores_done:     done.length,
           chores_assigned: assigned.length,
         },

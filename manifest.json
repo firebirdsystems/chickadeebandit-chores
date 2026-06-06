@@ -24,10 +24,10 @@
   },
   "storage": "db",
   "publishes": [
-    "allowance.weekly"
+    "reward.earned"
   ],
   "alert_on": [
-    "allowance.weekly"
+    "reward.earned"
   ],
   "nav": { "label": "Chores" },
   "widget": {
