@@ -434,12 +434,12 @@ async function initDb() {
  * Idempotent — skips silently if already migrated or no blob exists.
  */
 async function migrateFromBlob() {
-  const { rows } = await db(`SELECT value FROM settings WHERE key = 'migrated_from_blob'`);
+  const { rows } = await db(`SELECT value FROM app_chore_tracker__settings WHERE key = 'migrated_from_blob'`);
   if (rows.length > 0) return; // already done
 
   const markDone = (status = "1") =>
-    db(`INSERT INTO settings (key, value) VALUES ('migrated_from_blob', ?)
-        ON CONFLICT (household_id, key) DO UPDATE SET value = excluded.value`, [status]);
+    db(`INSERT INTO app_chore_tracker__settings (key, value) VALUES ('migrated_from_blob', ?)
+        ON CONFLICT (key) DO UPDATE SET value = excluded.value`, [status]);
 
   if (!STORE) { await markDone("no-store"); return; }
 
@@ -453,13 +453,13 @@ async function migrateFromBlob() {
 
     // Settings
     for (const [k, v] of Object.entries(old.settings ?? {})) {
-      await db(`INSERT INTO settings (key, value) VALUES (?, ?)
-                ON CONFLICT (household_id, key) DO UPDATE SET value = excluded.value`, [k, String(v)]);
+      await db(`INSERT INTO app_chore_tracker__settings (key, value) VALUES (?, ?)
+                ON CONFLICT (key) DO UPDATE SET value = excluded.value`, [k, String(v)]);
     }
 
     // Chores
     for (const c of old.chores ?? []) {
-      await db(`INSERT INTO chores (id, name, points, assigned_to, created_at)
+      await db(`INSERT INTO app_chore_tracker__chores (id, name, points, assigned_to, created_at)
                 VALUES (?, ?, ?, ?, ?)
                 ON CONFLICT (id) DO NOTHING`,
         [c.id, c.name, c.points, JSON.stringify(c.assignedTo ?? []), now]);
@@ -469,7 +469,7 @@ async function migrateFromBlob() {
     for (const [week, byChore] of Object.entries(old.completions ?? {})) {
       for (const [choreId, memberIds] of Object.entries(byChore)) {
         for (const memberId of memberIds) {
-          await db(`INSERT INTO completions (chore_id, member_id, week, completed_at)
+          await db(`INSERT INTO app_chore_tracker__completions (chore_id, member_id, week, completed_at)
                     VALUES (?, ?, ?, ?)
                     ON CONFLICT (chore_id, member_id, week) DO NOTHING`,
             [choreId, memberId, week, now]);
@@ -487,7 +487,7 @@ async function migrateFromBlob() {
 
 // ─── Load from DB ─────────────────────────────────────────────────────────
 async function loadSettings() {
-  const { rows } = await db(`SELECT key, value FROM settings WHERE key IN ('centsPerPoint', 'resetDay', 'rewardType', 'minutesPerPoint')`);
+  const { rows } = await db(`SELECT key, value FROM app_chore_tracker__settings WHERE key IN ('centsPerPoint', 'resetDay', 'rewardType', 'minutesPerPoint')`);
   for (const row of rows) {
     if (row.key === "centsPerPoint")   settings.centsPerPoint   = parseInt(row.value) || 10;
     if (row.key === "resetDay")        settings.resetDay        = row.value;
@@ -497,7 +497,7 @@ async function loadSettings() {
 }
 
 async function loadChores() {
-  const { rows } = await db(`SELECT id, name, points, assigned_to FROM chores ORDER BY created_at`);
+  const { rows } = await db(`SELECT id, name, points, assigned_to FROM app_chore_tracker__chores ORDER BY created_at`);
   chores = rows.map(r => ({
     id: r.id, name: r.name, points: r.points,
     assignedTo: JSON.parse(r.assigned_to ?? "[]"),
@@ -512,7 +512,7 @@ async function loadCompletions(weeks) {
   if (weeks.length === 0 || !DB) return;
   const placeholders = weeks.map(() => "?").join(",");
   const { rows } = await db(
-    `SELECT chore_id, member_id, week FROM completions WHERE week IN (${placeholders})`,
+    `SELECT chore_id, member_id, week FROM app_chore_tracker__completions WHERE week IN (${placeholders})`,
     weeks
   );
   for (const row of rows) {
@@ -553,7 +553,7 @@ async function toggleChore(choreId) {
 
   if (done) {
     await db(
-      `DELETE FROM completions WHERE chore_id = ? AND member_id = ? AND week = ?`,
+      `DELETE FROM app_chore_tracker__completions WHERE chore_id = ? AND member_id = ? AND week = ?`,
       [choreId, memberId, week]
     );
     if (completions[week]?.[choreId]) {
@@ -562,7 +562,7 @@ async function toggleChore(choreId) {
   } else {
     // ON CONFLICT DO NOTHING prevents duplicates if somehow called twice
     await db(
-      `INSERT INTO completions (chore_id, member_id, week, completed_at)
+      `INSERT INTO app_chore_tracker__completions (chore_id, member_id, week, completed_at)
        VALUES (?, ?, ?, ?)
        ON CONFLICT (chore_id, member_id, week) DO NOTHING`,
       [choreId, memberId, week, new Date().toISOString()]
@@ -579,14 +579,14 @@ async function saveChore(chore) {
   const now = new Date().toISOString();
   if (chore.id) {
     await db(
-      `UPDATE chores SET name = ?, points = ?, assigned_to = ? WHERE id = ?`,
+      `UPDATE app_chore_tracker__chores SET name = ?, points = ?, assigned_to = ? WHERE id = ?`,
       [chore.name, chore.points, JSON.stringify(chore.assignedTo), chore.id]
     );
     chores = chores.map(c => c.id === chore.id ? chore : c);
   } else {
     const id = crypto.randomUUID();
     await db(
-      `INSERT INTO chores (id, name, points, assigned_to, created_at) VALUES (?, ?, ?, ?, ?)`,
+      `INSERT INTO app_chore_tracker__chores (id, name, points, assigned_to, created_at) VALUES (?, ?, ?, ?, ?)`,
       [id, chore.name, chore.points, JSON.stringify(chore.assignedTo), now]
     );
     chores = [...chores, { ...chore, id }];
@@ -597,8 +597,8 @@ async function saveChore(chore) {
 
 async function deleteChore(id) {
   if (!await hubConfirm({ message: "Delete this chore?", description: "The chore and its history will be permanently removed.", confirmLabel: "Delete" })) return;
-  await db(`DELETE FROM chores WHERE id = ?`, [id]);
-  await db(`DELETE FROM completions WHERE chore_id = ?`, [id]);
+  await db(`DELETE FROM app_chore_tracker__chores WHERE id = ?`, [id]);
+  await db(`DELETE FROM app_chore_tracker__completions WHERE chore_id = ?`, [id]);
   chores = chores.filter(c => c.id !== id);
   for (const week of Object.values(completions)) delete week[id];
   render();
@@ -913,8 +913,8 @@ window.editChore = function(id) {
 
 window.updateSetting = function(key, val) {
   settings[key] = val;
-  db(`INSERT INTO settings (key, value) VALUES (?, ?)
-      ON CONFLICT (household_id, key) DO UPDATE SET value = excluded.value`, [key, String(val)]).catch(() => {});
+  db(`INSERT INTO app_chore_tracker__settings (key, value) VALUES (?, ?)
+      ON CONFLICT (key) DO UPDATE SET value = excluded.value`, [key, String(val)]).catch(() => {});
   render();
 };
 
@@ -938,20 +938,20 @@ async function checkAndSendWeeklySummary() {
 
   // Read lastSummaryWeek from the DB settings table
   const { rows: settRows } = await db(
-    `SELECT value FROM settings WHERE key = 'lastSummaryWeek'`
+    `SELECT value FROM app_chore_tracker__settings WHERE key = 'lastSummaryWeek'`
   );
   const lastSummaryWeek = settRows[0]?.value ?? null;
   if (lastSummaryWeek === prevWeek) return;
 
   const markDone = () => db(
-    `INSERT INTO settings (key, value) VALUES ('lastSummaryWeek', ?)
-     ON CONFLICT (household_id, key) DO UPDATE SET value = excluded.value`,
+    `INSERT INTO app_chore_tracker__settings (key, value) VALUES ('lastSummaryWeek', ?)
+     ON CONFLICT (key) DO UPDATE SET value = excluded.value`,
     [prevWeek]
   ).catch(() => {});
 
   // Check if previous week had any completions
   const { rows: countRows } = await db(
-    `SELECT COUNT(*) AS n FROM completions WHERE week = ?`, [prevWeek]
+    `SELECT COUNT(*) AS n FROM app_chore_tracker__completions WHERE week = ?`, [prevWeek]
   );
   const hasActivity = (countRows[0]?.n ?? 0) > 0;
   if (!hasActivity) { await markDone(); return; }
@@ -961,7 +961,7 @@ async function checkAndSendWeeklySummary() {
 
   // Load just the previous week's completions — no full-history load needed
   const { rows: compRows } = await db(
-    `SELECT chore_id, member_id FROM completions WHERE week = ?`, [prevWeek]
+    `SELECT chore_id, member_id FROM app_chore_tracker__completions WHERE week = ?`, [prevWeek]
   );
   const prevCompletions = { [prevWeek]: {} };
   for (const row of compRows) {

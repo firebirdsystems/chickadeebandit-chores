@@ -159,9 +159,9 @@ async function load() {
   if (!memberId) { render(); return; }
 
   const [{ rows: choreRows }, { rows: settRows }, { rows: doneRows }] = await Promise.all([
-    dbq(`SELECT id, name, points, assigned_to FROM chores ORDER BY created_at`),
-    dbq(`SELECT key, value FROM settings`),
-    dbq(`SELECT chore_id FROM completions WHERE member_id = ? AND week = ?`, [memberId, week]),
+    dbq(`SELECT id, name, points, assigned_to FROM app_chore_tracker__chores ORDER BY created_at`),
+    dbq(`SELECT key, value FROM app_chore_tracker__settings`),
+    dbq(`SELECT chore_id FROM app_chore_tracker__completions WHERE member_id = ? AND week = ?`, [memberId, week]),
   ]);
 
   chores = choreRows.map(r => ({ ...r, assignedTo: JSON.parse(r.assigned_to ?? "[]") }));
@@ -177,12 +177,12 @@ async function toggle(choreId) {
   const memberId = HUB_MEMBER?.id;
   if (!memberId) return;
   if (doneIds.has(choreId)) {
-    await dbq(`DELETE FROM completions WHERE chore_id=? AND member_id=? AND week=?`,
+    await dbq(`DELETE FROM app_chore_tracker__completions WHERE chore_id=? AND member_id=? AND week=?`,
       [choreId, memberId, week]);
     doneIds.delete(choreId);
   } else {
     await dbq(
-      `INSERT OR IGNORE INTO completions (chore_id, member_id, week, completed_at) VALUES (?,?,?,?)`,
+      `INSERT OR IGNORE INTO app_chore_tracker__completions (chore_id, member_id, week, completed_at) VALUES (?,?,?,?)`,
       [choreId, memberId, week, new Date().toISOString()]
     );
     doneIds.add(choreId);

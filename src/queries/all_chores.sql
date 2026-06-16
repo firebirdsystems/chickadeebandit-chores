@@ -4,7 +4,6 @@ SELECT
   points,
   assigned_to,
   created_at
-FROM chores
-WHERE household_id = current_setting('app.household_id', true)::uuid
+FROM app_chore_tracker__chores
 ORDER BY name
 LIMIT 200
