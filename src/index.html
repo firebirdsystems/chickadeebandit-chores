@@ -1026,7 +1026,7 @@ async function checkAndSendWeeklySummary() {
     }).catch(() => {});
   }
 
-  await fetch("/api/notifications/send", {
+  await fetch(window.__NOTIFY_URL ?? "/api/notifications/send", {
     method: "POST", headers: { "Content-Type": "application/json" },
     body: JSON.stringify({
       title: `Chore recap — ${rangeLabel}`,
