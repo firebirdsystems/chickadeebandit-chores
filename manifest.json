@@ -23,9 +23,15 @@
     "requires_approval": false
   },
   "storage": "db",
+  "row_policies": {
+    "chores": { "kind": "adult_writable" }
+  },
   "publishes": [
     "reward.earned"
   ],
+  "publish_acls": {
+    "reward.earned": { "require_role": "adult" }
+  },
   "alert_on": [
     "reward.earned"
   ],
