@@ -753,7 +753,7 @@ function renderKidView() {
             <button class="chore-check ${done ? "done" : ""}" onclick="toggleChore('${c.id}')">
               ${done ? "✓" : ""}
             </button>
-            <span class="chore-name ${done ? "done" : ""}">${c.name}</span>
+            <span class="chore-name ${done ? "done" : ""}">${esc(c.name)}</span>
             <span class="chore-pts ${done ? "done" : ""}">${c.points} pt${c.points !== 1 ? "s" : ""}</span>
           </div>
         `;
@@ -805,7 +805,7 @@ function renderAdminView() {
             ? `<span style="font-size:.8rem;color:var(--muted)">No chores assigned</span>`
             : myChores.map(c => {
                 const d = _isDone(c.id, kid.id);
-                return `<span class="kid-chore-pill ${d ? "done" : ""}">${d ? "✓ " : ""}${c.name}</span>`;
+                return `<span class="kid-chore-pill ${d ? "done" : ""}">${d ? "✓ " : ""}${esc(c.name)}</span>`;
               }).join("");
           return `
             <div class="kid-card">
@@ -834,7 +834,7 @@ function renderAdminView() {
           return `
             <div class="chore-manage-row">
               <div class="chore-info">
-                <div class="name">${c.name}</div>
+                <div class="name">${esc(c.name)}</div>
                 <div class="meta">${c.points} pt${c.points !== 1 ? "s" : ""} · ${assignLabel}</div>
               </div>
               <button class="btn btn-ghost btn-sm" onclick='editChore("${c.id}")'>Edit</button>
@@ -932,7 +932,7 @@ function render() {
 // Fires once per week. Queries previous week completions from DB rather than
 // loading the entire history blob, then posts a recap to the message board.
 async function checkAndSendWeeklySummary() {
-  if (!DB) return;
+  if (!DB || !HUB_MEMBER || !isAdult(HUB_MEMBER)) return;
 
   const prevWeek = getPreviousIsoWeek();
 

@@ -8,6 +8,6 @@ SELECT
 FROM app_chore_tracker__completions c
 JOIN app_chore_tracker__chores ch
   ON ch.id = c.chore_id
-WHERE c.week = to_char(CURRENT_DATE, 'IYYY-"W"IW')
+WHERE c.week = strftime('%G-W%V', 'now')
 ORDER BY c.completed_at DESC
 LIMIT 200
