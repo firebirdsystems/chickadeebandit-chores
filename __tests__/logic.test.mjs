@@ -2,8 +2,8 @@ import { describe, it, expect } from "vitest";
 import {
   initial, memberColor, MEMBER_COLORS,
   isoWeek, weekLabel,
-  isAssigned, isDone, choresDoneThisWeek,
-  earnedCents, fmtDollars,
+  isAssigned, isDone, isDoneNow, completionCount, choresDoneThisWeek,
+  earnedCents, fmtDollars, todayStr,
 } from "../src/logic.js";
 
 // ── Fixtures ──────────────────────────────────────────────────────────────────
@@ -14,10 +14,21 @@ const MEMBERS = [
 ];
 
 function chore(overrides = {}) {
-  return { id: "chore-1", name: "Make bed", points: 5, assignedTo: ["children"], ...overrides };
+  return { id: "chore-1", name: "Make bed", points: 5, assignedTo: ["children"], frequency: "weekly", ...overrides };
 }
 
 const SETTINGS = { centsPerPoint: 10, resetDay: "monday" };
+
+// Build the in-memory completions shape — { week: { choreId: [{ memberId, day }] } } —
+// from a terse { choreId: [memberId | {memberId, day}] } map. Bare member-id strings
+// become weekly completions (day ""); pass { memberId, day } for daily completions.
+function comp(week, map) {
+  const out = {};
+  for (const [choreId, entries] of Object.entries(map)) {
+    out[choreId] = entries.map(e => typeof e === "string" ? { memberId: e, day: "" } : e);
+  }
+  return { [week]: out };
+}
 
 // ── initial() ─────────────────────────────────────────────────────────────────
 describe("initial", () => {
@@ -178,23 +189,72 @@ describe("isDone", () => {
   });
 
   it("returns false when week key does not exist", () => {
-    const completions = { "2026-W01": { "chore-1": ["kid-1"] } };
+    const completions = comp("2026-W01", { "chore-1": ["kid-1"] });
     expect(isDone("chore-1", "kid-1", completions, "2026-W02")).toBe(false);
   });
 
   it("returns false when chore not completed by this member", () => {
-    const completions = { "2026-W20": { "chore-1": ["kid-2"] } };
+    const completions = comp("2026-W20", { "chore-1": ["kid-2"] });
     expect(isDone("chore-1", "kid-1", completions, "2026-W20")).toBe(false);
   });
 
   it("returns true when member has completed the chore this week", () => {
-    const completions = { "2026-W20": { "chore-1": ["kid-1", "kid-2"] } };
+    const completions = comp("2026-W20", { "chore-1": ["kid-1", "kid-2"] });
     expect(isDone("chore-1", "kid-1", completions, "2026-W20")).toBe(true);
   });
 
   it("returns false for a different chore the member did not complete", () => {
-    const completions = { "2026-W20": { "chore-1": ["kid-1"] } };
+    const completions = comp("2026-W20", { "chore-1": ["kid-1"] });
     expect(isDone("chore-2", "kid-1", completions, "2026-W20")).toBe(false);
+  });
+
+  it("matches a specific day for daily completions", () => {
+    const completions = comp("2026-W20", { "chore-1": [{ memberId: "kid-1", day: "2026-05-11" }] });
+    expect(isDone("chore-1", "kid-1", completions, "2026-W20", "2026-05-11")).toBe(true);
+    expect(isDone("chore-1", "kid-1", completions, "2026-W20", "2026-05-12")).toBe(false);
+    // A daily completion is not a weekly (day "") completion.
+    expect(isDone("chore-1", "kid-1", completions, "2026-W20")).toBe(false);
+  });
+});
+
+// ── completionCount() ─────────────────────────────────────────────────────────
+describe("completionCount", () => {
+  it("returns 0 when the member has no completions", () => {
+    expect(completionCount("chore-1", "kid-1", comp("2026-W20", { "chore-1": ["kid-2"] }), "2026-W20")).toBe(0);
+  });
+
+  it("returns 1 for a completed weekly chore", () => {
+    expect(completionCount("chore-1", "kid-1", comp("2026-W20", { "chore-1": ["kid-1"] }), "2026-W20")).toBe(1);
+  });
+
+  it("counts each day a daily chore was completed", () => {
+    const completions = comp("2026-W20", { "chore-1": [
+      { memberId: "kid-1", day: "2026-05-11" },
+      { memberId: "kid-1", day: "2026-05-12" },
+      { memberId: "kid-1", day: "2026-05-13" },
+      { memberId: "kid-2", day: "2026-05-11" },
+    ] });
+    expect(completionCount("chore-1", "kid-1", completions, "2026-W20")).toBe(3);
+    expect(completionCount("chore-1", "kid-2", completions, "2026-W20")).toBe(1);
+  });
+});
+
+// ── isDoneNow() ───────────────────────────────────────────────────────────────
+describe("isDoneNow", () => {
+  it("treats a weekly chore as done when completed this week (day '')", () => {
+    const now = new Date("2026-05-13T12:00:00Z");
+    const completions = comp(isoWeek(now), { "chore-1": ["kid-1"] });
+    expect(isDoneNow(chore({ frequency: "weekly" }), "kid-1", completions, now)).toBe(true);
+  });
+
+  it("treats a daily chore as done only when completed today", () => {
+    const now = new Date("2026-05-13T12:00:00Z");
+    const c = chore({ frequency: "daily" });
+    const doneToday = comp(isoWeek(now), { "chore-1": [{ memberId: "kid-1", day: todayStr(now) }] });
+    expect(isDoneNow(c, "kid-1", doneToday, now)).toBe(true);
+    // Done earlier in the week but not today → not "done now".
+    const doneYesterday = comp(isoWeek(now), { "chore-1": [{ memberId: "kid-1", day: "2026-05-12" }] });
+    expect(isDoneNow(c, "kid-1", doneYesterday, now)).toBe(false);
   });
 });
 
@@ -210,7 +270,7 @@ describe("choresDoneThisWeek", () => {
       { id: "c1", name: "Make bed", points: 5, assignedTo: ["children"] },
       { id: "c2", name: "Clean room", points: 10, assignedTo: ["children"] },
     ];
-    const completions = { "2026-W20": { c1: ["kid-1"], c2: [] } };
+    const completions = comp("2026-W20", { c1: ["kid-1"], c2: [] });
     const done = choresDoneThisWeek("kid-1", chores, MEMBERS, completions, "2026-W20");
     expect(done).toHaveLength(1);
     expect(done[0].id).toBe("c1");
@@ -218,8 +278,19 @@ describe("choresDoneThisWeek", () => {
 
   it("does not count chores not assigned to the member", () => {
     const chores = [{ id: "c1", name: "Adults task", points: 5, assignedTo: ["adults"] }];
-    const completions = { "2026-W20": { c1: ["kid-1"] } };
+    const completions = comp("2026-W20", { c1: ["kid-1"] });
     expect(choresDoneThisWeek("kid-1", chores, MEMBERS, completions, "2026-W20")).toHaveLength(0);
+  });
+
+  it("counts a daily chore done on any day exactly once", () => {
+    const chores = [{ id: "c1", name: "Make bed", points: 5, assignedTo: ["children"], frequency: "daily" }];
+    const completions = comp("2026-W20", { c1: [
+      { memberId: "kid-1", day: "2026-05-11" },
+      { memberId: "kid-1", day: "2026-05-12" },
+    ] });
+    const done = choresDoneThisWeek("kid-1", chores, MEMBERS, completions, "2026-W20");
+    expect(done).toHaveLength(1);
+    expect(done[0].id).toBe("c1");
   });
 });
 
@@ -234,28 +305,39 @@ describe("earnedCents", () => {
       { id: "c1", name: "Make bed", points: 5, assignedTo: ["children"] },
       { id: "c2", name: "Dishes", points: 10, assignedTo: ["children"] },
     ];
-    const completions = { "2026-W20": { c1: ["kid-1"], c2: ["kid-1"] } };
+    const completions = comp("2026-W20", { c1: ["kid-1"], c2: ["kid-1"] });
     // (5 + 10) × 10 centsPerPoint = 150 cents
     expect(earnedCents("kid-1", chores, MEMBERS, completions, SETTINGS, "2026-W20")).toBe(150);
   });
 
   it("respects the centsPerPoint exchange rate", () => {
     const chores = [{ id: "c1", name: "Make bed", points: 5, assignedTo: ["children"] }];
-    const completions = { "2026-W20": { c1: ["kid-1"] } };
+    const completions = comp("2026-W20", { c1: ["kid-1"] });
     const highRate = { centsPerPoint: 25 };
     expect(earnedCents("kid-1", chores, MEMBERS, completions, highRate, "2026-W20")).toBe(125);
   });
 
   it("does not count completed chores of other members", () => {
     const chores = [{ id: "c1", name: "Make bed", points: 5, assignedTo: ["children"] }];
-    const completions = { "2026-W20": { c1: ["kid-2"] } }; // kid-2 did it, not kid-1
+    const completions = comp("2026-W20", { c1: ["kid-2"] }); // kid-2 did it, not kid-1
     expect(earnedCents("kid-1", chores, MEMBERS, completions, SETTINGS, "2026-W20")).toBe(0);
   });
 
   it("does not count chores not assigned to the member", () => {
     const chores = [{ id: "c1", name: "Adult task", points: 100, assignedTo: ["adults"] }];
-    const completions = { "2026-W20": { c1: ["kid-1"] } };
+    const completions = comp("2026-W20", { c1: ["kid-1"] });
     expect(earnedCents("kid-1", chores, MEMBERS, completions, SETTINGS, "2026-W20")).toBe(0);
+  });
+
+  it("pays per day for a daily chore (points × days done)", () => {
+    const chores = [{ id: "c1", name: "Make bed", points: 5, assignedTo: ["children"], frequency: "daily" }];
+    const completions = comp("2026-W20", { c1: [
+      { memberId: "kid-1", day: "2026-05-11" },
+      { memberId: "kid-1", day: "2026-05-12" },
+      { memberId: "kid-1", day: "2026-05-13" },
+    ] });
+    // 5 pts × 10 cents × 3 days = 150 cents
+    expect(earnedCents("kid-1", chores, MEMBERS, completions, SETTINGS, "2026-W20")).toBe(150);
   });
 });
 
