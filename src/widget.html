@@ -74,6 +74,11 @@
       color: #9ca3af;
       text-decoration: line-through;
     }
+    .daily-tag {
+      font-size: 8.5px; font-weight: 700; text-transform: uppercase; letter-spacing: .04em;
+      color: #6b7280; background: #f3f4f6; padding: 1px 5px; border-radius: 8px;
+      vertical-align: middle; text-decoration: none;
+    }
 
     .chore-pts {
       font-size: 11px;
@@ -119,7 +124,7 @@
 <body>
 <script type="module">
 import { memberColor, initial, esc, isAdult } from "/hub-sdk.js";
-import { isAssigned, isDone, isoWeek, weekLabel, earnedCents, fmtDollars } from "./logic.js";
+import { isAssigned, isoWeek, weekLabel, fmtDollars, todayStr } from "./logic.js";
 
 const CONTEXT    = window.__CONTEXT_URL ?? "";
 const DB         = window.__DB_URL      ?? "";
@@ -129,9 +134,14 @@ const HUB_MEMBER = window.__CURRENT_MEMBER ?? null;
 
 let members     = [];
 let chores      = [];
-let doneIds     = new Set();   // chore IDs done by current member this week
+let doneDays    = new Map();   // choreId -> Set<day>; day "" = weekly, "YYYY-MM-DD" = daily
 let settings    = { centsPerPoint: 10 };
 const week      = isoWeek();
+const today     = todayStr();
+
+// "Done right now" — today for daily chores, this week for weekly chores.
+const dayFor    = c => c.frequency === "daily" ? today : "";
+const isDoneNow = c => doneDays.get(c.id)?.has(dayFor(c)) ?? false;
 
 async function dbq(sql, params = []) {
   if (!DB) return { rows: [] };
@@ -159,16 +169,20 @@ async function load() {
   if (!memberId) { render(); return; }
 
   const [{ rows: choreRows }, { rows: settRows }, { rows: doneRows }] = await Promise.all([
-    dbq(`SELECT id, name, points, assigned_to FROM app_chore_tracker__chores ORDER BY created_at`),
+    dbq(`SELECT id, name, points, assigned_to, frequency FROM app_chore_tracker__chores ORDER BY created_at`),
     dbq(`SELECT key, value FROM app_chore_tracker__settings`),
-    dbq(`SELECT chore_id FROM app_chore_tracker__completions WHERE member_id = ? AND week = ?`, [memberId, week]),
+    dbq(`SELECT chore_id, day FROM app_chore_tracker__completions WHERE member_id = ? AND week = ?`, [memberId, week]),
   ]);
 
-  chores = choreRows.map(r => ({ ...r, assignedTo: JSON.parse(r.assigned_to ?? "[]") }));
+  chores = choreRows.map(r => ({ ...r, assignedTo: JSON.parse(r.assigned_to ?? "[]"), frequency: r.frequency ?? "weekly" }));
   for (const { key, value } of settRows) {
     if (key === "centsPerPoint") settings.centsPerPoint = Number(value);
   }
-  doneIds = new Set(doneRows.map(r => r.chore_id));
+  doneDays = new Map();
+  for (const r of doneRows) {
+    if (!doneDays.has(r.chore_id)) doneDays.set(r.chore_id, new Set());
+    doneDays.get(r.chore_id).add(r.day ?? "");  // weekly chores carry day ""
+  }
 
   render();
 }
@@ -176,17 +190,20 @@ async function load() {
 async function toggle(choreId) {
   const memberId = HUB_MEMBER?.id;
   if (!memberId) return;
-  if (doneIds.has(choreId)) {
-    await dbq(`DELETE FROM app_chore_tracker__completions WHERE chore_id=? AND member_id=? AND week=?`,
-      [choreId, memberId, week]);
-    doneIds.delete(choreId);
+  const chore = chores.find(c => c.id === choreId);
+  const day   = chore?.frequency === "daily" ? today : "";
+  const days  = doneDays.get(choreId) ?? new Set();
+  if (days.has(day)) {
+    await dbq(`DELETE FROM app_chore_tracker__completions WHERE chore_id=? AND member_id=? AND week=? AND day=?`,
+      [choreId, memberId, week, day]);
+    days.delete(day);
   } else {
     await dbq(
-      `INSERT OR IGNORE INTO app_chore_tracker__completions (chore_id, member_id, week, completed_at) VALUES (?,?,?,?)`,
-      [choreId, memberId, week, new Date().toISOString()]
-    );
-    doneIds.add(choreId);
+      `INSERT OR IGNORE INTO app_chore_tracker__completions (chore_id, member_id, week, day, completed_at) VALUES (?,?,?,?,?)`,
+      [choreId, memberId, week, day, new Date().toISOString()]);
+    days.add(day);
   }
+  doneDays.set(choreId, days);
   render();
 }
 
@@ -205,10 +222,11 @@ function render() {
 
   const myChores = chores.filter(c => isAssigned(c, memberId, members));
 
+  const doneNowCount = myChores.filter(isDoneNow).length;
   const header = `
     <div class="header">
       <span class="header-week">${weekLabel()}</span>
-      <span class="header-pts">${doneIds.size}/${myChores.length} done</span>
+      <span class="header-pts">${doneNowCount}/${myChores.length} done</span>
     </div>`;
 
   let rows;
@@ -219,26 +237,25 @@ function render() {
   } else {
     // Show undone first, then done
     const sorted = [...myChores].sort((a, b) => {
-      const ad = doneIds.has(a.id), bd = doneIds.has(b.id);
+      const ad = isDoneNow(a), bd = isDoneNow(b);
       return ad === bd ? 0 : ad ? 1 : -1;
     });
     rows = `<div class="chore-list">
       ${sorted.map(c => {
-        const done = doneIds.has(c.id);
+        const done    = isDoneNow(c);
+        const isDaily = c.frequency === "daily";
         return `<div class="chore-row ${done ? "done" : ""}" onclick="doToggle('${c.id}')">
           <div class="check">${done ? "✓" : ""}</div>
-          <span class="chore-name">${esc(c.name)}</span>
+          <span class="chore-name">${esc(c.name)}${isDaily ? ' <span class="daily-tag">daily</span>' : ""}</span>
           <span class="chore-pts">${c.points}pt${c.points !== 1 ? "s" : ""}</span>
         </div>`;
       }).join("")}
     </div>`;
   }
 
-  // Compute earned cents from doneIds
-  const earnedPts = [...doneIds].reduce((sum, id) => {
-    const c = chores.find(c => c.id === id);
-    return sum + (c?.points ?? 0);
-  }, 0);
+  // Per-day scoring: a daily chore earns its points once per day completed this week.
+  const earnedPts = myChores.reduce((sum, c) =>
+    sum + c.points * (doneDays.get(c.id)?.size ?? 0), 0);
   const earned = fmtDollars(earnedPts * settings.centsPerPoint);
 
   const footer = `

@@ -169,7 +169,7 @@
     }
     .chore-check:not(.done):hover { border-color: var(--accent); }
 
-    .chore-name { flex: 1; }
+    .chore-main { flex: 1; display: flex; flex-direction: column; gap: 5px; min-width: 0; }
     .chore-name.done { text-decoration: line-through; color: var(--muted); }
     .chore-pts {
       font-size: 0.8rem;
@@ -181,6 +181,33 @@
       flex-shrink: 0;
     }
     .chore-pts.done { color: var(--green); background: var(--green-light); }
+
+    /* Daily-chore frequency tag + week streak dots */
+    .freq-tag {
+      font-size: 0.62rem; font-weight: 700; text-transform: uppercase; letter-spacing: .04em;
+      color: var(--accent); background: var(--accent-light);
+      padding: 1px 6px; border-radius: 20px; vertical-align: middle; margin-left: 4px;
+    }
+    .chore-name.done .freq-tag { color: var(--muted); }
+    .streak { display: flex; gap: 5px; }
+    .streak-dot {
+      width: 9px; height: 9px; border-radius: 50%;
+      border: 1.5px solid var(--border-mid); background: transparent;
+    }
+    .streak-dot.filled { background: var(--green); border-color: var(--green); }
+    .streak-dot.today { box-shadow: 0 0 0 2px var(--accent-light); }
+
+    /* Frequency picker in the chore modal */
+    .freq-grid { display: flex; gap: 8px; }
+    .freq-toggle {
+      flex: 1; display: flex; flex-direction: column; gap: 2px;
+      padding: 8px 12px; border-radius: 10px;
+      border: 1.5px solid var(--border); background: transparent;
+      cursor: pointer; text-align: left; transition: all .15s;
+    }
+    .freq-toggle.selected { border-color: var(--accent); background: var(--accent-light); }
+    .freq-toggle .freq-label { font-size: 0.9rem; font-weight: 600; color: var(--accent); }
+    .freq-toggle .freq-hint  { font-size: 0.72rem; color: var(--muted); }
 
     /* ── Earnings summary ───────────────────────────────── */
     .earnings-bar {
@@ -374,8 +401,9 @@
 <script type="module">
 import { memberColor, initial, esc, isAdult, hubConfirm } from "/hub-sdk.js";
 import {
-  isoWeek, weekLabel, isAssigned, isDone, choresDoneThisWeek,
-  earnedCents, fmtDollars, getPreviousIsoWeek, previousWeekLabel,
+  isoWeek, weekLabel, isAssigned, isDone, isDoneNow, completionCount,
+  choresDoneThisWeek, earnedCents, fmtDollars, getPreviousIsoWeek,
+  previousWeekLabel, todayStr, weekDates,
 } from "./logic.js";
 
 // ─── Runtime globals injected by Chickadee Bandit ───────────────────────────────
@@ -393,8 +421,8 @@ let pendingDeepLinkChoreId = null;
 
 // App data — now backed by separate DB tables instead of one blob
 let settings    = { centsPerPoint: 10, resetDay: "monday", rewardType: "money", minutesPerPoint: 5 };
-let chores      = []; // { id, name, points, assignedTo: string[] }
-let completions = {}; // { "YYYY-WW": { choreId: [memberId, ...] } } — same shape as before for logic.js
+let chores      = []; // { id, name, points, assignedTo: string[], frequency: "weekly"|"daily" }
+let completions = {}; // { "YYYY-WW": { choreId: [{ memberId, day }] } } — day "" for weekly, "YYYY-MM-DD" for daily
 
 // ─── DB helper ────────────────────────────────────────────────────────────
 async function db(sql, params = []) {
@@ -413,8 +441,11 @@ const fmt$ = fmtDollars;
 function choresForMember(memberId) {
   return chores.filter(c => isAssigned(c, memberId, members));
 }
-function _isDone(choreId, memberId) {
-  return isDone(choreId, memberId, completions);
+function _isDoneNow(chore, memberId) {
+  return isDoneNow(chore, memberId, completions);
+}
+function _completionCount(choreId, memberId) {
+  return completionCount(choreId, memberId, completions);
 }
 function _choresDoneThisWeek(memberId) {
   return choresDoneThisWeek(memberId, chores, members, completions);
@@ -457,21 +488,21 @@ async function migrateFromBlob() {
                 ON CONFLICT (key) DO UPDATE SET value = excluded.value`, [k, String(v)]);
     }
 
-    // Chores
+    // Chores (legacy blob predates per-chore frequency → all weekly)
     for (const c of old.chores ?? []) {
-      await db(`INSERT INTO app_chore_tracker__chores (id, name, points, assigned_to, created_at)
-                VALUES (?, ?, ?, ?, ?)
+      await db(`INSERT INTO app_chore_tracker__chores (id, name, points, assigned_to, frequency, created_at)
+                VALUES (?, ?, ?, ?, 'weekly', ?)
                 ON CONFLICT (id) DO NOTHING`,
         [c.id, c.name, c.points, JSON.stringify(c.assignedTo ?? []), now]);
     }
 
-    // Completions (can be large — bulk insert in chunks if needed)
+    // Completions (legacy blob predates daily chores → all weekly, day = '')
     for (const [week, byChore] of Object.entries(old.completions ?? {})) {
       for (const [choreId, memberIds] of Object.entries(byChore)) {
         for (const memberId of memberIds) {
-          await db(`INSERT INTO app_chore_tracker__completions (chore_id, member_id, week, completed_at)
-                    VALUES (?, ?, ?, ?)
-                    ON CONFLICT (chore_id, member_id, week) DO NOTHING`,
+          await db(`INSERT INTO app_chore_tracker__completions (chore_id, member_id, week, day, completed_at)
+                    VALUES (?, ?, ?, '', ?)
+                    ON CONFLICT (chore_id, member_id, week, day) DO NOTHING`,
             [choreId, memberId, week, now]);
         }
       }
@@ -497,10 +528,11 @@ async function loadSettings() {
 }
 
 async function loadChores() {
-  const { rows } = await db(`SELECT id, name, points, assigned_to FROM app_chore_tracker__chores ORDER BY created_at`);
+  const { rows } = await db(`SELECT id, name, points, assigned_to, frequency FROM app_chore_tracker__chores ORDER BY created_at`);
   chores = rows.map(r => ({
     id: r.id, name: r.name, points: r.points,
     assignedTo: JSON.parse(r.assigned_to ?? "[]"),
+    frequency: r.frequency ?? "weekly",
   }));
 }
 
@@ -512,14 +544,15 @@ async function loadCompletions(weeks) {
   if (weeks.length === 0 || !DB) return;
   const placeholders = weeks.map(() => "?").join(",");
   const { rows } = await db(
-    `SELECT chore_id, member_id, week FROM app_chore_tracker__completions WHERE week IN (${placeholders})`,
+    `SELECT chore_id, member_id, week, day FROM app_chore_tracker__completions WHERE week IN (${placeholders})`,
     weeks
   );
   for (const row of rows) {
     if (!completions[row.week]) completions[row.week] = {};
     if (!completions[row.week][row.chore_id]) completions[row.week][row.chore_id] = [];
-    if (!completions[row.week][row.chore_id].includes(row.member_id)) {
-      completions[row.week][row.chore_id].push(row.member_id);
+    const day = row.day ?? "";
+    if (!completions[row.week][row.chore_id].some(e => e.memberId === row.member_id && e.day === day)) {
+      completions[row.week][row.chore_id].push({ memberId: row.member_id, day });
     }
   }
 }
@@ -547,29 +580,34 @@ async function loadMembers() {
  * family members cannot overwrite each other regardless of timing.
  */
 async function toggleChore(choreId) {
+  const chore    = chores.find(c => c.id === choreId);
   const week     = isoWeek();
+  // Daily chores toggle today's completion; weekly chores toggle the week (day = "").
+  const day      = chore?.frequency === "daily" ? todayStr() : "";
   const memberId = currentMember.id;
-  const done     = _isDone(choreId, memberId);
+  const done     = isDone(choreId, memberId, completions, week, day);
 
   if (done) {
     await db(
-      `DELETE FROM app_chore_tracker__completions WHERE chore_id = ? AND member_id = ? AND week = ?`,
-      [choreId, memberId, week]
+      `DELETE FROM app_chore_tracker__completions WHERE chore_id = ? AND member_id = ? AND week = ? AND day = ?`,
+      [choreId, memberId, week, day]
     );
     if (completions[week]?.[choreId]) {
-      completions[week][choreId] = completions[week][choreId].filter(id => id !== memberId);
+      completions[week][choreId] = completions[week][choreId].filter(e => !(e.memberId === memberId && e.day === day));
     }
   } else {
     // ON CONFLICT DO NOTHING prevents duplicates if somehow called twice
     await db(
-      `INSERT INTO app_chore_tracker__completions (chore_id, member_id, week, completed_at)
-       VALUES (?, ?, ?, ?)
-       ON CONFLICT (chore_id, member_id, week) DO NOTHING`,
-      [choreId, memberId, week, new Date().toISOString()]
+      `INSERT INTO app_chore_tracker__completions (chore_id, member_id, week, day, completed_at)
+       VALUES (?, ?, ?, ?, ?)
+       ON CONFLICT (chore_id, member_id, week, day) DO NOTHING`,
+      [choreId, memberId, week, day, new Date().toISOString()]
     );
     if (!completions[week]) completions[week] = {};
     if (!completions[week][choreId]) completions[week][choreId] = [];
-    if (!completions[week][choreId].includes(memberId)) completions[week][choreId].push(memberId);
+    if (!completions[week][choreId].some(e => e.memberId === memberId && e.day === day)) {
+      completions[week][choreId].push({ memberId, day });
+    }
   }
 
   render();
@@ -579,15 +617,15 @@ async function saveChore(chore) {
   const now = new Date().toISOString();
   if (chore.id) {
     await db(
-      `UPDATE app_chore_tracker__chores SET name = ?, points = ?, assigned_to = ? WHERE id = ?`,
-      [chore.name, chore.points, JSON.stringify(chore.assignedTo), chore.id]
+      `UPDATE app_chore_tracker__chores SET name = ?, points = ?, assigned_to = ?, frequency = ? WHERE id = ?`,
+      [chore.name, chore.points, JSON.stringify(chore.assignedTo), chore.frequency, chore.id]
     );
     chores = chores.map(c => c.id === chore.id ? chore : c);
   } else {
     const id = crypto.randomUUID();
     await db(
-      `INSERT INTO app_chore_tracker__chores (id, name, points, assigned_to, created_at) VALUES (?, ?, ?, ?, ?)`,
-      [id, chore.name, chore.points, JSON.stringify(chore.assignedTo), now]
+      `INSERT INTO app_chore_tracker__chores (id, name, points, assigned_to, frequency, created_at) VALUES (?, ?, ?, ?, ?, ?)`,
+      [id, chore.name, chore.points, JSON.stringify(chore.assignedTo), chore.frequency, now]
     );
     chores = [...chores, { ...chore, id }];
   }
@@ -613,6 +651,9 @@ function openModal(html) {
   modalEl.innerHTML = `<div class="modal">${html}</div>`;
   modalEl.addEventListener("click", e => { if (e.target === modalEl) closeModal(); });
   document.body.appendChild(modalEl);
+  // Programmatic focus works inside cross-origin iframes (unlike the autofocus
+  // attribute, which the browser blocks) because it rides the user's click gesture.
+  modalEl.querySelector("[data-autofocus]")?.focus();
 }
 function closeModal() { modalEl?.remove(); modalEl = null; }
 
@@ -632,14 +673,30 @@ function openChoreModal(chore = null) {
       data-value="${opt.value}" onclick="toggleAssignee(this)">${opt.label}</button>
   `).join("");
 
+  const frequency = chore?.frequency ?? "weekly";
+  const freqHtml = [
+    { value: "weekly", label: "Weekly", hint: "Once a week" },
+    { value: "daily",  label: "Daily",  hint: "Every day" },
+  ].map(opt => `
+    <button type="button" class="freq-toggle ${frequency === opt.value ? "selected" : ""}"
+      data-value="${opt.value}" onclick="selectFrequency(this)">
+      <span class="freq-label">${opt.label}</span>
+      <span class="freq-hint">${opt.hint}</span>
+    </button>
+  `).join("");
+
   openModal(`
     <h3>${isEdit ? "Edit Chore" : "Add Chore"}</h3>
     <div class="form-group">
       <label>Chore name</label>
-      <input id="chore-name" type="text" value="${chore?.name ?? ""}" placeholder="Make bed" autofocus />
+      <input id="chore-name" type="text" value="${chore?.name ?? ""}" placeholder="Make bed" data-autofocus />
     </div>
     <div class="form-group">
-      <label>Points (1 pt = ${fmt$(settings.centsPerPoint)})</label>
+      <label>How often?</label>
+      <div class="freq-grid" id="freq-grid">${freqHtml}</div>
+    </div>
+    <div class="form-group">
+      <label>Points <span id="pts-unit">(1 pt = ${fmt$(settings.centsPerPoint)}${frequency === "daily" ? ", earned each day" : ""})</span></label>
       <input id="chore-pts" type="number" min="1" max="100" value="${chore?.points ?? 5}" />
     </div>
     <div class="form-group">
@@ -673,12 +730,24 @@ window.toggleAssignee = function(btn) {
   }
 };
 
+window.selectFrequency = function(btn) {
+  const grid = document.getElementById("freq-grid");
+  grid.querySelectorAll(".freq-toggle").forEach(b => b.classList.remove("selected"));
+  btn.classList.add("selected");
+  // Reflect per-day earning in the points hint.
+  const unit = document.getElementById("pts-unit");
+  if (unit) unit.textContent = btn.dataset.value === "daily"
+    ? `(1 pt = ${fmt$(settings.centsPerPoint)}, earned each day)`
+    : `(1 pt = ${fmt$(settings.centsPerPoint)})`;
+};
+
 window.submitChoreModal = function(existingId) {
-  const name   = document.getElementById("chore-name").value.trim();
-  const points = parseInt(document.getElementById("chore-pts").value) || 5;
+  const name      = document.getElementById("chore-name").value.trim();
+  const points    = parseInt(document.getElementById("chore-pts").value) || 5;
+  const frequency = document.querySelector(".freq-toggle.selected")?.dataset.value ?? "weekly";
   const selected = [...document.querySelectorAll(".assignee-toggle.selected")].map(b => b.dataset.value);
   if (!name) { document.getElementById("chore-name").focus(); return; }
-  saveChore({ id: existingId || null, name, points, assignedTo: selected });
+  saveChore({ id: existingId || null, name, points, assignedTo: selected, frequency });
 };
 
 window.closeModal  = closeModal;
@@ -720,9 +789,12 @@ function fmtMin(m) {
 
 function renderKidView() {
   const myChores      = choresForMember(currentMember.id);
-  const doneCount     = _choresDoneThisWeek(currentMember.id).length;
+  // "Done" reflects the visible checkmarks: today for daily chores, the week for weekly.
+  const doneCount     = myChores.filter(c => _isDoneNow(c, currentMember.id)).length;
   const earned        = _earnedCents(currentMember.id);
-  const totalPossible = myChores.reduce((s, c) => s + c.points * settings.centsPerPoint, 0);
+  // A daily chore can be earned up to 7× in a week, so its weekly ceiling is points × 7.
+  const totalPossible = myChores.reduce((s, c) =>
+    s + c.points * settings.centsPerPoint * (c.frequency === "daily" ? 7 : 1), 0);
 
   const pts2min = c => settings.centsPerPoint > 0
     ? Math.round((c / settings.centsPerPoint) * settings.minutesPerPoint) : 0;
@@ -744,17 +816,29 @@ function renderKidView() {
     ? `of ${fmtMin(possibleMin)} possible`
     : `of ${fmt$(totalPossible)} possible`;
 
+  const week     = isoWeek();
+  const todayD   = todayStr();
   const choresHtml = myChores.length === 0
     ? `<div class="empty">No chores assigned yet. Ask a parent to add some!</div>`
     : myChores.map(c => {
-        const done = _isDone(c.id, currentMember.id);
+        const done    = _isDoneNow(c, currentMember.id);
+        const isDaily = c.frequency === "daily";
+        const ptsLabel = `${c.points} pt${c.points !== 1 ? "s" : ""}${isDaily ? "/day" : ""}`;
+        const streak  = isDaily
+          ? `<div class="streak" title="This week">${weekDates().map(d =>
+              `<span class="streak-dot ${isDone(c.id, currentMember.id, completions, week, d) ? "filled" : ""} ${d === todayD ? "today" : ""}"></span>`
+            ).join("")}</div>`
+          : "";
         return `
           <div class="chore-row">
             <button class="chore-check ${done ? "done" : ""}" onclick="toggleChore('${c.id}')">
               ${done ? "✓" : ""}
             </button>
-            <span class="chore-name ${done ? "done" : ""}">${esc(c.name)}</span>
-            <span class="chore-pts ${done ? "done" : ""}">${c.points} pt${c.points !== 1 ? "s" : ""}</span>
+            <div class="chore-main">
+              <span class="chore-name ${done ? "done" : ""}">${esc(c.name)}${isDaily ? ` <span class="freq-tag">daily</span>` : ""}</span>
+              ${streak}
+            </div>
+            <span class="chore-pts ${done ? "done" : ""}">${ptsLabel}</span>
           </div>
         `;
       }).join("");
@@ -804,7 +888,11 @@ function renderAdminView() {
           const pillsHtml = myChores.length === 0
             ? `<span style="font-size:.8rem;color:var(--muted)">No chores assigned</span>`
             : myChores.map(c => {
-                const d = _isDone(c.id, kid.id);
+                if (c.frequency === "daily") {
+                  const cnt = _completionCount(c.id, kid.id);
+                  return `<span class="kid-chore-pill ${cnt > 0 ? "done" : ""}">${esc(c.name)} <strong>${cnt}/7</strong></span>`;
+                }
+                const d = _isDoneNow(c, kid.id);
                 return `<span class="kid-chore-pill ${d ? "done" : ""}">${d ? "✓ " : ""}${esc(c.name)}</span>`;
               }).join("");
           return `
@@ -835,7 +923,7 @@ function renderAdminView() {
             <div class="chore-manage-row">
               <div class="chore-info">
                 <div class="name">${esc(c.name)}</div>
-                <div class="meta">${c.points} pt${c.points !== 1 ? "s" : ""} · ${assignLabel}</div>
+                <div class="meta">${c.points} pt${c.points !== 1 ? "s" : ""} · ${c.frequency === "daily" ? "Daily" : "Weekly"} · ${assignLabel}</div>
               </div>
               <button class="btn btn-ghost btn-sm" onclick='editChore("${c.id}")'>Edit</button>
             </div>
@@ -959,14 +1047,15 @@ async function checkAndSendWeeklySummary() {
   const kids = members.filter(m => m.role === "child");
   if (kids.length === 0) { await markDone(); return; }
 
-  // Load just the previous week's completions — no full-history load needed
+  // Load just the previous week's completions — no full-history load needed.
+  // Daily rows carry a `day`, so earnedCents counts each day a daily chore was done.
   const { rows: compRows } = await db(
-    `SELECT chore_id, member_id FROM app_chore_tracker__completions WHERE week = ?`, [prevWeek]
+    `SELECT chore_id, member_id, day FROM app_chore_tracker__completions WHERE week = ?`, [prevWeek]
   );
   const prevCompletions = { [prevWeek]: {} };
   for (const row of compRows) {
     if (!prevCompletions[prevWeek][row.chore_id]) prevCompletions[prevWeek][row.chore_id] = [];
-    prevCompletions[prevWeek][row.chore_id].push(row.member_id);
+    prevCompletions[prevWeek][row.chore_id].push({ memberId: row.member_id, day: row.day ?? "" });
   }
 
   const rangeLabel = previousWeekLabel();

@@ -1,7 +1,10 @@
+-- This week's completions. Weekly chores store day = ''; daily chores store one
+-- row per calendar day (day = 'YYYY-MM-DD'), so daily chores appear once per day.
 SELECT
   c.chore_id,
   c.member_id,
   c.week,
+  c.day,
   c.completed_at,
   ch.name   AS chore_name,
   ch.points AS chore_points
