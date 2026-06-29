@@ -23,6 +23,7 @@
     "requires_approval": false
   },
   "storage": "db",
+  "db_encryption": "off",
   "row_policies": {
     "chores": { "kind": "adult_writable" }
   },
