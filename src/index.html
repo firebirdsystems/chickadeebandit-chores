@@ -410,6 +410,8 @@ import {
 const CONTEXT    = window.__CONTEXT_URL    ?? "";
 const STORE      = window.__STORE_URL      ?? ""; // retained for one-time blob migration
 const DB         = window.__DB_URL         ?? "";
+const EVENTS_URL = window.__EVENTS_URL     ?? "/api/events";
+const ACTIVITY   = window.__ACTIVITY_URL   ?? "";
 const APP_ID     = window.__APP_ID         ?? "chore-tracker";
 const HUB_MEMBER = window.__CURRENT_MEMBER ?? null;
 
@@ -433,6 +435,24 @@ async function db(sql, params = []) {
     body: JSON.stringify({ sql, params }),
   });
   return res.json(); // { rows: [...] }
+}
+
+async function publishEvent(type, subjectId, payload = {}) {
+  if (!EVENTS_URL) return;
+  await fetch(EVENTS_URL, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ type, subject_id: subjectId, payload }),
+  }).catch(() => {});
+}
+
+async function logRecognition(type, description, metadata = {}) {
+  if (!ACTIVITY) return;
+  await fetch(ACTIVITY, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ type, description, metadata }),
+  }).catch(() => {});
 }
 
 // ─── Wrappers for logic.js (unchanged signatures, updated variable refs) ──
@@ -607,6 +627,46 @@ async function toggleChore(choreId) {
     if (!completions[week][choreId]) completions[week][choreId] = [];
     if (!completions[week][choreId].some(e => e.memberId === memberId && e.day === day)) {
       completions[week][choreId].push({ memberId, day });
+    }
+
+    const member = members.find(m => m.id === memberId);
+    const count = completionCount(choreId, memberId, completions, week);
+    await publishEvent("chore.completed", memberId, {
+      member_id: memberId,
+      member_name: member?.name ?? "",
+      chore_id: choreId,
+      chore_name: chore?.name ?? "",
+      week,
+      day,
+      frequency: chore?.frequency ?? "weekly",
+      points: chore?.points ?? 0,
+      completion_count: count,
+    });
+    await logRecognition("chore_completed", `${member?.name ?? "Someone"} finished ${chore?.name ?? "a chore"}`, {
+      memberId,
+      choreId,
+      week,
+      day,
+      deepLink: `/run/${APP_ID}`,
+    });
+
+    const milestone = chore?.frequency === "daily" && [3, 5, 7].includes(count);
+    if (milestone) {
+      await publishEvent("chore.streak", memberId, {
+        member_id: memberId,
+        member_name: member?.name ?? "",
+        chore_id: choreId,
+        chore_name: chore?.name ?? "",
+        week,
+        days_completed: count,
+      });
+      await logRecognition("chore_streak", `${member?.name ?? "Someone"} has a ${count}-day ${chore?.name ?? "chore"} streak`, {
+        memberId,
+        choreId,
+        week,
+        daysCompleted: count,
+        deepLink: `/run/${APP_ID}`,
+      });
     }
   }
 
@@ -860,6 +920,17 @@ function renderKidView() {
       </div>
     </div>
 
+    <div class="card">
+      <div class="card-body" style="display:flex;align-items:center;justify-content:space-between;gap:14px">
+        <div>
+          <div class="section-title" style="margin-bottom:4px">Working toward</div>
+          <div style="font-weight:700">Allowance, savings goals, and rewards</div>
+          <div style="font-size:.82rem;color:var(--muted)">Your completed chores feed Piggy Bank and Rewards &amp; Privileges.</div>
+        </div>
+        <div style="font-weight:800;color:var(--green);white-space:nowrap">${doneCount}/${myChores.length}</div>
+      </div>
+    </div>
+
     <div class="section-title">${weekLabel(new Date())}</div>
     <div class="card">${choresHtml}</div>
   `;
@@ -1083,8 +1154,7 @@ async function checkAndSendWeeklySummary() {
     body: JSON.stringify({ author_name: "Chore Tracker", body: messageBody }),
   }).catch(() => {});
 
-  // Publish per-member allowance events — piggy-bank app consumes these to auto-deposit
-  const EVENTS_URL = window.__EVENTS_URL ?? "/api/events";
+  // Publish per-member allowance events — piggy-bank app consumes these to auto-deposit.
   for (const kid of kids) {
     const assigned = choresForMember(kid.id);
     if (assigned.length === 0) continue;
@@ -1092,27 +1162,28 @@ async function checkAndSendWeeklySummary() {
     const cents   = earnedCents(kid.id, chores, members, prevCompletions, settings, prevWeek);
     const minutes = (settings.rewardType !== "money" && settings.centsPerPoint > 0)
       ? Math.round((cents / settings.centsPerPoint) * settings.minutesPerPoint) : 0;
-    await fetch(EVENTS_URL, {
-      method: "POST", headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({
-        source_app_id: APP_ID,
-        type: "reward.earned",
-        subject_id: kid.id,
-        payload: {
-          member_id:       kid.id,
-          member_name:     kid.name,
-          cents_earned:    cents,
-          minutes_earned:  minutes,
-          reward_type:     settings.rewardType,
-          note:            `Chores — week of ${prevWeek}`,
-          source_label:    "Chores",
-          // extra context (not required by consumers)
-          week:            prevWeek,
-          chores_done:     done.length,
-          chores_assigned: assigned.length,
-        },
-      }),
-    }).catch(() => {});
+    const payload = {
+      member_id:       kid.id,
+      member_name:     kid.name,
+      cents_earned:    cents,
+      minutes_earned:  minutes,
+      reward_type:     settings.rewardType,
+      note:            `Chores — week of ${prevWeek}`,
+      source_label:    "Chores",
+      week:            prevWeek,
+      chores_done:     done.length,
+      chores_assigned: assigned.length,
+    };
+    await publishEvent("allowance.earned", kid.id, payload);
+    await logRecognition("allowance_earned", `${kid.name} earned ${earnDesc} from chores`, {
+      memberId: kid.id,
+      week: prevWeek,
+      centsEarned: cents,
+      minutesEarned: minutes,
+      choresDone: done.length,
+      choresAssigned: assigned.length,
+      deepLink: `/run/${APP_ID}`,
+    });
   }
 
   await fetch(window.__NOTIFY_URL ?? "/api/notifications/send", {

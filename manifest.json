@@ -2,7 +2,7 @@
   "id": "chore-tracker",
   "name": "Chores & Allowance",
   "version": "1.0.0",
-  "description": "Assign chores to kids, track completions, and calculate weekly allowance automatically.",
+  "description": "Assign chores to kids, track completions, celebrate effort and streaks, and calculate weekly allowance automatically.",
   "entrypoint": "index.html",
   "runtime": "static",
   "category": "family",
@@ -28,13 +28,21 @@
     "chores": { "kind": "adult_writable" }
   },
   "publishes": [
-    "reward.earned"
+    "chore.completed",
+    "chore.streak",
+    "allowance.earned"
   ],
   "publish_acls": {
-    "reward.earned": { "require_role": "adult" }
+    "chore.completed": { "require_role": "member" },
+    "chore.streak": { "require_role": "member" },
+    "allowance.earned": { "require_role": "adult" }
   },
   "alert_on": [
-    "reward.earned"
+    "chore.streak",
+    "allowance.earned"
+  ],
+  "exports": [
+    "kid-progress"
   ],
   "nav": { "label": "Chores" },
   "widget": {
