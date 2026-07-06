@@ -420,6 +420,16 @@ let members       = [];
 let currentMember = null;
 let adminTab      = "overview";
 let pendingDeepLinkChoreId = null;
+let modalChoreId  = null;   // chore currently open in the add/edit modal
+
+// Delegated click handler for chore toggles. Chore ids come from the DB and are
+// attacker-controllable via raw /api/db, so they are carried in a data-* attribute
+// (esc'd) and read back with getAttribute rather than interpolated into an inline
+// onclick JS string, which would be an injection vector.
+document.getElementById("root").addEventListener("click", (e) => {
+  const t = e.target.closest("[data-chore-toggle]");
+  if (t) toggleChore(t.getAttribute("data-chore-toggle"));
+});
 
 // App data — now backed by separate DB tables instead of one blob
 let settings    = { centsPerPoint: 10, resetDay: "monday", rewardType: "money", minutesPerPoint: 5 };
@@ -693,7 +703,8 @@ async function saveChore(chore) {
   render();
 }
 
-async function deleteChore(id) {
+async function deleteChore(id = modalChoreId) {
+  if (!id) return;
   if (!await hubConfirm({ message: "Delete this chore?", description: "The chore and its history will be permanently removed.", confirmLabel: "Delete" })) return;
   await db(`DELETE FROM app_chore_tracker__chores WHERE id = ?`, [id]);
   await db(`DELETE FROM app_chore_tracker__completions WHERE chore_id = ?`, [id]);
@@ -719,6 +730,7 @@ function closeModal() { modalEl?.remove(); modalEl = null; }
 
 function openChoreModal(chore = null) {
   const isEdit    = !!chore;
+  modalChoreId    = chore?.id ?? null;
   const kids      = members.filter(m => m.role === "child");
   const assignedTo = chore?.assignedTo ?? ["children"];
 
@@ -730,7 +742,7 @@ function openChoreModal(chore = null) {
 
   const assigneeHtml = assigneeOptions.map(opt => `
     <button type="button" class="assignee-toggle ${assignedTo.includes(opt.value) ? "selected" : ""}"
-      data-value="${opt.value}" onclick="toggleAssignee(this)">${opt.label}</button>
+      data-value="${esc(opt.value)}" onclick="toggleAssignee(this)">${esc(opt.label)}</button>
   `).join("");
 
   const frequency = chore?.frequency ?? "weekly";
@@ -749,7 +761,7 @@ function openChoreModal(chore = null) {
     <h3>${isEdit ? "Edit Chore" : "Add Chore"}</h3>
     <div class="form-group">
       <label>Chore name</label>
-      <input id="chore-name" type="text" value="${chore?.name ?? ""}" placeholder="Make bed" data-autofocus />
+      <input id="chore-name" type="text" value="${esc(chore?.name ?? "")}" placeholder="Make bed" data-autofocus />
     </div>
     <div class="form-group">
       <label>How often?</label>
@@ -765,12 +777,12 @@ function openChoreModal(chore = null) {
     </div>
     <div class="modal-actions">
       <button class="btn btn-ghost" onclick="closeModal()">Cancel</button>
-      <button class="btn btn-primary" onclick="submitChoreModal('${chore?.id ?? ""}')">
+      <button class="btn btn-primary" onclick="submitChoreModal()">
         ${isEdit ? "Save" : "Add Chore"}
       </button>
     </div>
     ${isEdit ? `<div style="margin-top:10px;text-align:center">
-      <button class="btn btn-danger btn-sm" onclick="deleteChore('${chore.id}');closeModal()">Delete chore</button>
+      <button class="btn btn-danger btn-sm" onclick="deleteChore();closeModal()">Delete chore</button>
     </div>` : ""}
   `);
 }
@@ -801,13 +813,13 @@ window.selectFrequency = function(btn) {
     : `(1 pt = ${fmt$(settings.centsPerPoint)})`;
 };
 
-window.submitChoreModal = function(existingId) {
+window.submitChoreModal = function() {
   const name      = document.getElementById("chore-name").value.trim();
   const points    = parseInt(document.getElementById("chore-pts").value) || 5;
   const frequency = document.querySelector(".freq-toggle.selected")?.dataset.value ?? "weekly";
   const selected = [...document.querySelectorAll(".assignee-toggle.selected")].map(b => b.dataset.value);
   if (!name) { document.getElementById("chore-name").focus(); return; }
-  saveChore({ id: existingId || null, name, points, assignedTo: selected, frequency });
+  saveChore({ id: modalChoreId || null, name, points, assignedTo: selected, frequency });
 };
 
 window.closeModal  = closeModal;
@@ -815,7 +827,11 @@ window.deleteChore = deleteChore;
 
 // ─── Screens ──────────────────────────────────────────────────────────────
 function renderWhoScreen() {
-  const switchable = members.filter(m => m.id === HUB_MEMBER?.id || (m.role === "child" && !m.email));
+  // Only an adult may mark chores on behalf of login-less kids: the completions
+  // row policy is owner_only (adults bypass), so a non-adult acting as another
+  // member would be rejected server-side. Offer the switch only to adults.
+  const canActForKids = isAdult(HUB_MEMBER);
+  const switchable = members.filter(m => m.id === HUB_MEMBER?.id || (canActForKids && m.role === "child" && !m.email));
   document.getElementById("root").innerHTML = `
     <div id="who-screen">
       <h2>Who are you?</h2>
@@ -824,7 +840,7 @@ function renderWhoScreen() {
         ${switchable.map(m => `
           <button class="member-btn" onclick="selectMember('${m.id}')">
             <div class="avatar" style="background:${_memberColor(m.id)}">${initial(m.name)}</div>
-            <span>${m.name}</span>
+            <span>${esc(m.name)}</span>
             <span class="role-badge">${m.role === "adult" ? "Parent" : "Kid"}</span>
           </button>
         `).join("")}
@@ -891,7 +907,7 @@ function renderKidView() {
           : "";
         return `
           <div class="chore-row">
-            <button class="chore-check ${done ? "done" : ""}" onclick="toggleChore('${c.id}')">
+            <button class="chore-check ${done ? "done" : ""}" data-chore-toggle="${esc(c.id)}">
               ${done ? "✓" : ""}
             </button>
             <div class="chore-main">
@@ -905,8 +921,8 @@ function renderKidView() {
 
   document.getElementById("root").innerHTML = `
     <div class="nav-bar">
-      <span class="who">Chores for <strong>${currentMember.name}</strong></span>
-      ${members.some(m => m.role === "child" && !m.email) ? `<button class="btn btn-ghost btn-sm" onclick="switchMember()">Switch</button>` : ""}
+      <span class="who">Chores for <strong>${esc(currentMember.name)}</strong></span>
+      ${isAdult(HUB_MEMBER) && members.some(m => m.role === "child" && !m.email) ? `<button class="btn btn-ghost btn-sm" onclick="switchMember()">Switch</button>` : ""}
     </div>
 
     <div class="earnings-bar">
@@ -971,7 +987,7 @@ function renderAdminView() {
               <div class="kid-card-header">
                 <div class="avatar" style="background:${_memberColor(kid.id)}">${initial(kid.name)}</div>
                 <div>
-                  <div class="name">${kid.name}</div>
+                  <div class="name">${esc(kid.name)}</div>
                   <div style="font-size:.78rem;color:var(--muted)">${done.length}/${myChores.length} done this week</div>
                 </div>
                 <div class="earned">${fmt$(earned)}</div>
@@ -1055,8 +1071,8 @@ function renderAdminView() {
 
   document.getElementById("root").innerHTML = `
     <div class="nav-bar">
-      <span class="who">Admin: <strong>${currentMember.name}</strong></span>
-      ${members.some(m => m.role === "child" && !m.email) ? `<button class="btn btn-ghost btn-sm" onclick="switchMember()">Switch</button>` : ""}
+      <span class="who">Admin: <strong>${esc(currentMember.name)}</strong></span>
+      ${isAdult(HUB_MEMBER) && members.some(m => m.role === "child" && !m.email) ? `<button class="btn btn-ghost btn-sm" onclick="switchMember()">Switch</button>` : ""}
     </div>
     ${tabHtml}
     ${contentHtml}
