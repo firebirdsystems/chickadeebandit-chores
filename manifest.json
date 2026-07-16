@@ -1,7 +1,7 @@
 {
   "id": "chore-tracker",
   "name": "Chores & Allowance",
-  "version": "1.0.0",
+  "version": "1.1.0",
   "description": "Assign chores to kids, track completions, celebrate effort and streaks, and calculate weekly allowance automatically.",
   "entrypoint": "index.html",
   "runtime": "static",
@@ -25,13 +25,22 @@
   "storage": "db",
   "db_encryption": "off",
   "row_policies": {
-    "chores": { "kind": "adult_writable" },
+    "chores": {
+      "kind": "adult_writable"
+    },
     "completions": {
       "kind": "owner_or_visibility",
       "member_column": "member_id",
       "visibility_column": "visibility",
-      "everyone_values": ["everyone"],
-      "retain_days": { "default": 365, "timestamp_column": "completed_at", "id_column": "rowid", "override_key": "completion_history" }
+      "everyone_values": [
+        "everyone"
+      ],
+      "retain_days": {
+        "default": 365,
+        "timestamp_column": "completed_at",
+        "id_column": "rowid",
+        "override_key": "completion_history"
+      }
     }
   },
   "publishes": [
@@ -40,9 +49,15 @@
     "allowance.earned"
   ],
   "publish_acls": {
-    "chore.completed": { "require_role": "member" },
-    "chore.streak": { "require_role": "member" },
-    "allowance.earned": { "require_role": "adult" }
+    "chore.completed": {
+      "require_role": "member"
+    },
+    "chore.streak": {
+      "require_role": "member"
+    },
+    "allowance.earned": {
+      "require_role": "adult"
+    }
   },
   "alert_on": [
     "chore.streak",
@@ -51,7 +66,9 @@
   "exports": [
     "kid-progress"
   ],
-  "nav": { "label": "Chores" },
+  "nav": {
+    "label": "Chores"
+  },
   "widget": {
     "label": "Chores",
     "size": "small"
@@ -61,17 +78,31 @@
       "kind": "sql",
       "query": "SELECT COUNT(*) AS n FROM app_chore_tracker__completions WHERE completed_at >= datetime('now', '-7 days') LIMIT 1"
     },
-    "display": { "template": "stat", "value": "n", "label": "done this week" }
+    "display": {
+      "template": "stat",
+      "value": "n",
+      "label": "done this week"
+    }
+  },
+  "agenda": {
+    "kind": "chore",
+    "source": {
+      "kind": "sql",
+      "query": "SELECT c.id AS id, c.name AS title, x.completed_at AS when_at, x.member_id AS member_id, 1 AS done FROM app_chore_tracker__completions x JOIN app_chore_tracker__chores c ON c.id = x.chore_id WHERE x.completed_at >= :day_start AND x.completed_at < :day_end ORDER BY x.completed_at LIMIT 20"
+    }
   },
   "resource_limits": {
     "max_store_bytes": 524288,
     "max_store_reads_per_day": 500,
     "max_store_writes_per_day": 200
   },
-  "icon": "📋",
+  "icon": "\ud83d\udccb",
   "ai_access": {
     "allowed": true,
     "mode": "read",
-    "db_exports": ["all_chores", "this_weeks_completions"]
+    "db_exports": [
+      "all_chores",
+      "this_weeks_completions"
+    ]
   }
 }
