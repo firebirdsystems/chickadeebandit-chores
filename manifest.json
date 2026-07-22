@@ -1,5 +1,6 @@
 {
   "id": "chore-tracker",
+  "contexts": ["household", "shared_space"],
   "name": "Chores & Allowance",
   "version": "1.1.0",
   "description": "Assign chores to kids, track completions, celebrate effort and streaks, and calculate weekly allowance automatically.",
