@@ -273,10 +273,12 @@ window.doToggle = id => toggle(id).catch(() => {});
   await loadMembers();
   await load();
 
-  // Refresh widget when new allowance events arrive (e.g. weekly summary posted)
+  // Refresh the widget when allowance is earned. Must be a type this app
+  // declares in its manifest (publishes/subscribes_to) — the hub 403s reads of
+  // undeclared event types.
   if (EVENTS) {
     const { createEventPoller } = await import("/hub-sdk.js");
-    createEventPoller(EVENTS, "allowance.weekly", () => load(), 60_000);
+    createEventPoller(EVENTS, "allowance.earned", () => load(), 60_000);
   }
 })();
 </script>
