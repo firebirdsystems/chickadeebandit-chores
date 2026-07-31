@@ -44,6 +44,17 @@
       }
     }
   },
+  "member_references": {
+    "chores": {
+      "column": "assigned_to",
+      "on_removed": "prune_list"
+    },
+    "completions": {
+      "column": "member_id",
+      "on_removed": "delete",
+      "id_column": "rowid"
+    }
+  },
   "publishes": [
     "chore.completed",
     "chore.streak",
@@ -93,6 +104,7 @@
     }
   },
   "resource_limits": {
+    "max_db_bytes": 52428800,
     "max_store_bytes": 524288,
     "max_store_reads_per_day": 500,
     "max_store_writes_per_day": 200
