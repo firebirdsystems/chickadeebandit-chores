@@ -706,8 +706,11 @@ async function saveChore(chore) {
 async function deleteChore(id = modalChoreId) {
   if (!id) return;
   if (!await hubConfirm({ message: "Delete this chore?", description: "The chore and its history will be permanently removed.", confirmLabel: "Delete" })) return;
+  // One statement: manifest.delete_cascades removes the chore's completions in
+  // the same transaction. As two calls, a failure after the first left a year of
+  // completion rows keyed to a chore that no longer existed — invisible in every
+  // view and alive until retention swept them.
   await db(`DELETE FROM app_chore_tracker__chores WHERE id = ?`, [id]);
-  await db(`DELETE FROM app_chore_tracker__completions WHERE chore_id = ?`, [id]);
   chores = chores.filter(c => c.id !== id);
   for (const week of Object.values(completions)) delete week[id];
   render();

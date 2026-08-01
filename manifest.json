@@ -44,6 +44,14 @@
       }
     }
   },
+  "delete_cascades": {
+    "chores": [
+      {
+        "table": "completions",
+        "foreign_key": "chore_id"
+      }
+    ]
+  },
   "member_references": {
     "chores": {
       "column": "assigned_to",
