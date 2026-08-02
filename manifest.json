@@ -63,6 +63,50 @@
       "id_column": "rowid"
     }
   },
+  "automation_actions": {
+    "add_chore": {
+      "title": "Add a chore",
+      "description": "Create a chore on the household's list when another app's event fires — a returned item to put away, a maintenance job to run, a trip task to prepare.",
+      "params": {
+        "name": {
+          "type": "text",
+          "label": "Chore name",
+          "required": true
+        },
+        "points": {
+          "type": "integer",
+          "label": "Points it is worth",
+          "default": 5,
+          "min": 0,
+          "max": 1000
+        },
+        "frequency": {
+          "type": "text",
+          "label": "How often",
+          "default": "weekly",
+          "options": ["weekly", "daily"]
+        }
+      },
+      "dedupe": {
+        "table": "chores",
+        "column": "source_event_id"
+      },
+      "steps": [
+        {
+          "op": "insert",
+          "table": "chores",
+          "values": {
+            "id": "$uuid",
+            "name": ":name",
+            "points": ":points",
+            "frequency": ":frequency",
+            "created_at": "$now",
+            "source_event_id": "$event_id"
+          }
+        }
+      ]
+    }
+  },
   "publishes": [
     "chore.completed",
     "chore.streak",
