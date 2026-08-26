@@ -24,6 +24,11 @@
     "requires_approval": false
   },
   "storage": "db",
+  "preload": {
+    "migrated": {"sql": "SELECT value FROM app_chore_tracker__settings WHERE key = 'migrated_from_blob'"},
+    "settings": {"sql": "SELECT key, value FROM app_chore_tracker__settings WHERE key IN ('centsPerPoint', 'resetDay', 'rewardType', 'minutesPerPoint')"},
+    "chores": {"sql": "SELECT id, name, points, assigned_to, frequency FROM app_chore_tracker__chores ORDER BY created_at"}
+  },
   "db_encryption": "off",
   "row_policies": {
     "chores": {
