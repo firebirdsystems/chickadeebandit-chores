@@ -399,12 +399,23 @@
 </div>
 
 <script type="module">
-import { memberColor, initial, esc, isAdult, hubConfirm } from "/hub-sdk.js";
+import { memberColor, initial, esc, isAdult, hubConfirm, hubToday } from "/hub-sdk.js";
 import {
   isoWeek, weekLabel, isAssigned, isDone, isDoneNow, completionCount,
   choresDoneThisWeek, earnedCents, fmtDollars, getPreviousIsoWeek,
-  previousWeekLabel, todayStr, weekDates,
+  previousWeekLabel, weekDates,
 } from "./logic.js";
+
+// A completion is keyed by (week, day), both STORED and both compared against
+// stored rows, so they have to name the HOUSEHOLD's calendar day — not the
+// viewer device's. Someone ticking a chore at 11pm, or from another timezone,
+// would otherwise write it under a different day (and, at a week boundary, a
+// different week) from the one every server-side surface reports.
+//
+// hubDay() hands the pure helpers in logic.js a Date already on the household's
+// calendar, so they keep working unchanged and logic.js stays SDK-free. Noon
+// keeps DST shifts from tipping it into an adjacent day.
+const hubDay = () => new Date(`${hubToday()}T12:00:00`);
 
 // ─── Runtime globals injected by Chickadee Bandit ───────────────────────────────
 const CONTEXT    = window.__CONTEXT_URL    ?? "";
@@ -471,17 +482,27 @@ const fmt$ = fmtDollars;
 function choresForMember(memberId) {
   return chores.filter(c => isAssigned(c, memberId, members));
 }
+// The week and day are passed EXPLICITLY, never left to the logic.js defaults.
+// Those default to `new Date()` / `isoWeek()`, which is the viewer device's
+// calendar — but completions are STORED under the household's day and week (see
+// hubDay above), so letting the default stand would compare a household-local
+// key against a device-local one. A member ticking a chore at 11pm would see it
+// spring back to undone, and at a week boundary the whole week's dots would
+// read empty. Writing one calendar and reading another is worse than picking
+// either, so these three wrappers are the read half of that pair.
 function _isDoneNow(chore, memberId) {
-  return isDoneNow(chore, memberId, completions);
+  return isDoneNow(chore, memberId, completions, hubDay());
 }
 function _completionCount(choreId, memberId) {
-  return completionCount(choreId, memberId, completions);
+  return completionCount(choreId, memberId, completions, isoWeek(hubDay()));
 }
 function _choresDoneThisWeek(memberId) {
-  return choresDoneThisWeek(memberId, chores, members, completions);
+  return choresDoneThisWeek(memberId, chores, members, completions, isoWeek(hubDay()));
 }
 function _earnedCents(memberId) {
-  return earnedCents(memberId, chores, members, completions, settings);
+  // Same rule as the wrappers above: the week is the HOUSEHOLD's, because the
+  // completions this totals were stored under it.
+  return earnedCents(memberId, chores, members, completions, settings, isoWeek(hubDay()));
 }
 function _memberColor(id) { return memberColor(id, members); }
 
@@ -611,9 +632,9 @@ async function loadMembers() {
  */
 async function toggleChore(choreId) {
   const chore    = chores.find(c => c.id === choreId);
-  const week     = isoWeek();
+  const week     = isoWeek(hubDay());
   // Daily chores toggle today's completion; weekly chores toggle the week (day = "").
-  const day      = chore?.frequency === "daily" ? todayStr() : "";
+  const day      = chore?.frequency === "daily" ? hubToday() : "";
   const memberId = currentMember.id;
   const done     = isDone(choreId, memberId, completions, week, day);
 
@@ -895,8 +916,8 @@ function renderKidView() {
     ? `of ${fmtMin(possibleMin)} possible`
     : `of ${fmt$(totalPossible)} possible`;
 
-  const week     = isoWeek();
-  const todayD   = todayStr();
+  const week     = isoWeek(hubDay());
+  const todayD   = hubToday();
   const choresHtml = myChores.length === 0
     ? `<div class="empty">No chores assigned yet. Ask a parent to add some!</div>`
     : myChores.map(c => {
@@ -904,7 +925,7 @@ function renderKidView() {
         const isDaily = c.frequency === "daily";
         const ptsLabel = `${c.points} pt${c.points !== 1 ? "s" : ""}${isDaily ? "/day" : ""}`;
         const streak  = isDaily
-          ? `<div class="streak" title="This week">${weekDates().map(d =>
+          ? `<div class="streak" title="This week">${weekDates(hubDay()).map(d =>
               `<span class="streak-dot ${isDone(c.id, currentMember.id, completions, week, d) ? "filled" : ""} ${d === todayD ? "today" : ""}"></span>`
             ).join("")}</div>`
           : "";
@@ -1112,7 +1133,9 @@ function render() {
 async function checkAndSendWeeklySummary() {
   if (!DB || !HUB_MEMBER || !isAdult(HUB_MEMBER)) return;
 
-  const prevWeek = getPreviousIsoWeek();
+  // Keys both the completions read and the stored lastSummaryWeek marker, so it
+  // has to be the household's week or the recap covers the wrong seven days.
+  const prevWeek = getPreviousIsoWeek(hubDay());
 
   // Read lastSummaryWeek from the DB settings table
   const { rows: settRows } = await db(
@@ -1148,7 +1171,7 @@ async function checkAndSendWeeklySummary() {
     prevCompletions[prevWeek][row.chore_id].push({ memberId: row.member_id, day: row.day ?? "" });
   }
 
-  const rangeLabel = previousWeekLabel();
+  const rangeLabel = previousWeekLabel(hubDay());
   const lines      = [`📊 Chore recap — ${rangeLabel}`];
 
   const fmtMinLocal = m => m < 60 ? `${m}m` : m % 60 === 0 ? `${m/60}h` : `${Math.floor(m/60)}h ${m%60}m`;
@@ -1239,7 +1262,7 @@ function handleDeepLink() {
         await Promise.all([
           loadSettings(),
           loadChores(),
-          loadCompletions([isoWeek(), getPreviousIsoWeek()]),
+          loadCompletions([isoWeek(hubDay()), getPreviousIsoWeek(hubDay())]),
         ]);
       }
     })(),
