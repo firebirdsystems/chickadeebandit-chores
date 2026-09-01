@@ -1258,7 +1258,13 @@ function handleDeepLink() {
     (async () => {
       if (DB) {
         await initDb();
-        await migrateFromBlob();       // no-op on second+ load
+        // Adults only. This is a one-time legacy import that WRITES the
+        // settings table, and settings is now adult_writable (it holds the
+        // allowance conversion rate, which a child must not be able to
+        // rewrite) — so an ungated call would throw on a child's first launch.
+        // It also reads first and returns early once the marker is set, so on
+        // every already-migrated household this is a no-op for everyone.
+        if (HUB_MEMBER && isAdult(HUB_MEMBER)) await migrateFromBlob();
         await Promise.all([
           loadSettings(),
           loadChores(),

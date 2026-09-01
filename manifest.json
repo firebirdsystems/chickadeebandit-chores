@@ -34,6 +34,9 @@
     "chores": {
       "kind": "adult_writable"
     },
+    "settings": {
+      "kind": "adult_writable"
+    },
     "completions": {
       "kind": "owner_or_visibility",
       "member_column": "member_id",
