@@ -10,8 +10,8 @@
     body {
       font-family: var(--hub-font, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif);
       font-size: 13px;
-      background: #fff;
-      color: #111827;
+      background: var(--hub-surface, #fff);
+      color: var(--hub-text, #111827);
       height: 100vh;
       overflow: hidden;
       display: flex;
@@ -26,7 +26,7 @@
       border-bottom: 1px solid #e5e7eb;
       flex-shrink: 0;
     }
-    .header-week  { font-size: 11px; color: #6b7280; }
+    .header-week  { font-size: 11px; color: var(--hub-text-muted, #6b7280); }
     .header-pts   { font-size: 11px; font-weight: 600; color: #059669; }
 
     .chore-list {
@@ -45,7 +45,7 @@
       border-bottom: 1px solid #f3f4f6;
     }
     .chore-row:last-child { border-bottom: none; }
-    .chore-row:hover { background: #f9fafb; }
+    .chore-row:hover { background: var(--hub-bg, #f9fafb); }
 
     .check {
       width: 18px; height: 18px;
@@ -76,14 +76,14 @@
     }
     .daily-tag {
       font-size: 8.5px; font-weight: 700; text-transform: uppercase; letter-spacing: .04em;
-      color: #6b7280; background: #f3f4f6; padding: 1px 5px; border-radius: 8px;
+      color: var(--hub-text-muted, #6b7280); background: var(--hub-bg, #f3f4f6); padding: 1px 5px; border-radius: 8px;
       vertical-align: middle; text-decoration: none;
     }
 
     .chore-pts {
       font-size: 11px;
       font-weight: 600;
-      color: #6b7280;
+      color: var(--hub-text-muted, #6b7280);
       flex-shrink: 0;
     }
     .chore-row.done .chore-pts { color: #d1d5db; }
@@ -95,14 +95,14 @@
       align-items: center;
       justify-content: space-between;
       flex-shrink: 0;
-      background: #f9fafb;
+      background: var(--hub-bg, #f9fafb);
     }
-    .footer-earned { font-size: 11px; color: #6b7280; }
+    .footer-earned { font-size: 11px; color: var(--hub-text-muted, #6b7280); }
     .footer-earned strong { color: #059669; }
     .open-link {
       font-size: 11px;
       font-weight: 600;
-      color: #111827;
+      color: var(--hub-text, #111827);
       text-decoration: none;
     }
     .open-link:hover { text-decoration: underline; }
