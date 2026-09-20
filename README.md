@@ -1,6 +1,6 @@
 # Chores & Allowance
 
-A [Chickadee Bandit](http://chickadeebandit.com) app.
+A [Chickadee Bandit](https://chickadeebandit.com/app-library/chore-tracker) app.
 
 ## Features
 
