@@ -390,6 +390,13 @@
     .loading { text-align: center; padding: 40px; color: var(--muted); }
     .error-msg { background: var(--hub-tint-danger, #fee2e2); color: var(--red); border-radius: 8px; padding: 10px 14px; font-size: 0.85rem; margin-bottom: 12px; }
     .section-title { font-size: 0.75rem; font-weight: 700; color: var(--muted); text-transform: uppercase; letter-spacing: .06em; margin-bottom: 8px; }
+    .notice {
+      position: fixed; left: 50%; bottom: 16px; transform: translateX(-50%);
+      max-width: calc(100% - 32px); padding: 10px 14px;
+      background: var(--card); color: var(--text);
+      border: 1px solid var(--red); border-radius: var(--radius);
+      box-shadow: var(--shadow); z-index: 1000;
+    }
   </style>
 <base href="/run/chore-tracker/">
 </head>
@@ -399,11 +406,12 @@
 </div>
 
 <script type="module">
-import { memberColor, initial, esc, isAdult, hubConfirm, hubToday } from "/hub-sdk.js";
+import { memberColor, initial, esc, isAdult, hubConfirm, hubToday, createDbHelper } from "/hub-sdk.js";
 import {
   isoWeek, weekLabel, isAssigned, isDone, isDoneNow, completionCount,
   choresDoneThisWeek, earnedCents, fmtDollars, getPreviousIsoWeek,
-  previousWeekLabel, weekDates,
+  previousWeekLabel, weekDates, canActForOthers, speaksForOthers, owedCents, streakEvent,
+  isDuplicateRowError, publishAppEvent, worthRetryingLater,
 } from "./logic.js";
 
 // A completion is keyed by (week, day), both STORED and both compared against
@@ -419,12 +427,18 @@ const hubDay = () => new Date(`${hubToday()}T12:00:00`);
 
 // ─── Runtime globals injected by Chickadee Bandit ───────────────────────────────
 const CONTEXT    = window.__CONTEXT_URL    ?? "";
-const STORE      = window.__STORE_URL      ?? ""; // retained for one-time blob migration
 const DB         = window.__DB_URL         ?? "";
 const EVENTS_URL = window.__EVENTS_URL     ?? "/api/events";
 const ACTIVITY   = window.__ACTIVITY_URL   ?? "";
 const APP_ID     = window.__APP_ID         ?? "chore-tracker";
 const HUB_MEMBER = window.__CURRENT_MEMBER ?? null;
+// Whether this viewer may record chores for a login-less kid (see
+// canActForOthers): an adult member of a household, nobody in a space.
+const TENANT = {
+  isAdmin: window.__IS_ADMIN === true,
+  tenantKind: window.__TENANT_KIND ?? "household",
+};
+const CAN_ACT_FOR_OTHERS = canActForOthers(HUB_MEMBER, TENANT);
 
 // ─── State ────────────────────────────────────────────────────────────────
 let members       = [];
@@ -439,7 +453,13 @@ let modalChoreId  = null;   // chore currently open in the add/edit modal
 // onclick JS string, which would be an injection vector.
 document.getElementById("root").addEventListener("click", (e) => {
   const t = e.target.closest("[data-chore-toggle]");
-  if (t) toggleChore(t.getAttribute("data-chore-toggle"));
+  if (t) return toggleChore(t.getAttribute("data-chore-toggle"));
+  // Same reason: a chore id is writable by any adult (in a shared space, any
+  // participant), and an inline onclick='editChore("${id}")' ran it as code.
+  const edit = e.target.closest("[data-chore-edit]");
+  if (edit) return window.editChore(edit.getAttribute("data-chore-edit"));
+  const who = e.target.closest("[data-select-member]");
+  if (who) return window.selectMember(who.getAttribute("data-select-member"));
 });
 
 // App data — now backed by separate DB tables instead of one blob
@@ -458,13 +478,29 @@ async function db(sql, params = []) {
   return res.json(); // { rows: [...] }
 }
 
-async function publishEvent(type, subjectId, payload = {}) {
-  if (!EVENTS_URL) return;
-  await fetch(EVENTS_URL, {
-    method: "POST",
-    headers: { "Content-Type": "application/json" },
-    body: JSON.stringify({ type, subject_id: subjectId, payload }),
-  }).catch(() => {});
+// A statement whose failure must stop the caller (it throws the hub's error text).
+// db() above never looks at the status, which is fine for reads that degrade
+// to an empty list but not for a completion: the row IS the completion (the
+// hub publishes chore.completed from it), so a silently failed insert would
+// show a tick that earns nothing and vanishes on reload.
+const dbChecked = createDbHelper(DB);
+
+// A short, self-dismissing message for a failure the user needs to know about.
+function showNotice(text) {
+  // One at a time: repeated failures replace the notice rather than stacking.
+  document.querySelector(".notice")?.remove();
+  const el = document.createElement("div");
+  el.className = "notice";
+  el.setAttribute("role", "alert");
+  el.textContent = text;
+  document.body.appendChild(el);
+  setTimeout(() => el.remove(), 4000);
+}
+
+// chore.completed is never sent from here: the hub publishes it from the
+// completion row, and refuses a browser POST of it.
+function publishEvent(type, subjectId, payload, key) {
+  return publishAppEvent(EVENTS_URL, { type, subjectId, payload, key });
 }
 
 async function logRecognition(type, description, metadata = {}) {
@@ -511,62 +547,6 @@ async function initDb() {
   // Schema is managed by hub migrations (migrations/001_init.sql)
 }
 
-/**
- * One-time migration: import the old KV blob into the new DB tables.
- * Idempotent — skips silently if already migrated or no blob exists.
- */
-async function migrateFromBlob() {
-  const { rows } = await db(`SELECT value FROM app_chore_tracker__settings WHERE key = 'migrated_from_blob'`);
-  if (rows.length > 0) return; // already done
-
-  const markDone = (status = "1") =>
-    db(`INSERT INTO app_chore_tracker__settings (key, value) VALUES ('migrated_from_blob', ?)
-        ON CONFLICT (key) DO UPDATE SET value = excluded.value`, [status]);
-
-  if (!STORE) { await markDone("no-store"); return; }
-
-  try {
-    const res  = await fetch(`${STORE}?key=data`);
-    const json = await res.json();
-    if (!json.value) { await markDone("empty"); return; }
-
-    const old = JSON.parse(json.value);
-    const now = new Date().toISOString();
-
-    // Settings
-    for (const [k, v] of Object.entries(old.settings ?? {})) {
-      await db(`INSERT INTO app_chore_tracker__settings (key, value) VALUES (?, ?)
-                ON CONFLICT (key) DO UPDATE SET value = excluded.value`, [k, String(v)]);
-    }
-
-    // Chores (legacy blob predates per-chore frequency → all weekly)
-    for (const c of old.chores ?? []) {
-      await db(`INSERT INTO app_chore_tracker__chores (id, name, points, assigned_to, frequency, created_at)
-                VALUES (?, ?, ?, ?, 'weekly', ?)
-                ON CONFLICT (id) DO NOTHING`,
-        [c.id, c.name, c.points, JSON.stringify(c.assignedTo ?? []), now]);
-    }
-
-    // Completions (legacy blob predates daily chores → all weekly, day = '')
-    for (const [week, byChore] of Object.entries(old.completions ?? {})) {
-      for (const [choreId, memberIds] of Object.entries(byChore)) {
-        for (const memberId of memberIds) {
-          await db(`INSERT INTO app_chore_tracker__completions (chore_id, member_id, week, day, completed_at)
-                    VALUES (?, ?, ?, '', ?)
-                    ON CONFLICT (chore_id, member_id, week, day) DO NOTHING`,
-            [choreId, memberId, week, now]);
-        }
-      }
-    }
-
-    await markDone();
-    // Remove the old blob to free KV storage
-    fetch(`${STORE}?key=data`, { method: "DELETE" }).catch(() => {});
-  } catch {
-    await markDone("failed").catch(() => {});
-  }
-}
-
 // ─── Load from DB ─────────────────────────────────────────────────────────
 async function loadSettings() {
   const { rows } = await db(`SELECT key, value FROM app_chore_tracker__settings WHERE key IN ('centsPerPoint', 'resetDay', 'rewardType', 'minutesPerPoint')`);
@@ -581,7 +561,9 @@ async function loadSettings() {
 async function loadChores() {
   const { rows } = await db(`SELECT id, name, points, assigned_to, frequency FROM app_chore_tracker__chores ORDER BY created_at`);
   chores = rows.map(r => ({
-    id: r.id, name: r.name, points: r.points,
+    // A number, always: points is rendered unescaped, and SQLite keeps text a
+    // raw /api/db write put in an INTEGER column as text.
+    id: r.id, name: r.name, points: Number(r.points) || 0,
     assignedTo: JSON.parse(r.assigned_to ?? "[]"),
     frequency: r.frequency ?? "weekly",
   }));
@@ -639,69 +621,87 @@ async function toggleChore(choreId) {
   const done     = isDone(choreId, memberId, completions, week, day);
 
   if (done) {
-    await db(
-      `DELETE FROM app_chore_tracker__completions WHERE chore_id = ? AND member_id = ? AND week = ? AND day = ?`,
-      [choreId, memberId, week, day]
-    );
+    try {
+      await dbChecked(
+        `DELETE FROM app_chore_tracker__completions WHERE chore_id = ? AND member_id = ? AND week = ? AND day = ?`,
+        [choreId, memberId, week, day]
+      );
+    } catch {
+      showNotice("Couldn't untick that chore. Please try again.");
+      return;
+    }
     if (completions[week]?.[choreId]) {
       completions[week][choreId] = completions[week][choreId].filter(e => !(e.memberId === memberId && e.day === day));
     }
   } else {
-    // ON CONFLICT DO NOTHING prevents duplicates if somehow called twice
-    await db(
-      `INSERT INTO app_chore_tracker__completions (chore_id, member_id, week, day, completed_at)
-       VALUES (?, ?, ?, ?, ?)
-       ON CONFLICT (chore_id, member_id, week, day) DO NOTHING`,
-      [choreId, memberId, week, day, new Date().toISOString()]
-    );
+    // A plain single-row INSERT, never ON CONFLICT / OR IGNORE: the hub
+    // publishes chore.completed from this row and refuses a conflict-resolving
+    // insert here. A row that already exists (a double tap, or ticked on
+    // another device) fails on its primary key and means "already checked".
+    let inserted = true;
+    try {
+      await dbChecked(
+        `INSERT INTO app_chore_tracker__completions (chore_id, member_id, week, day, completed_at)
+         VALUES (?, ?, ?, ?, ?)`,
+        [choreId, memberId, week, day, new Date().toISOString()]
+      );
+    } catch (error) {
+      if (!isDuplicateRowError(error?.message)) {
+        showNotice("Couldn't save that chore. Please try again.");
+        return;
+      }
+      inserted = false;
+    }
     if (!completions[week]) completions[week] = {};
     if (!completions[week][choreId]) completions[week][choreId] = [];
     if (!completions[week][choreId].some(e => e.memberId === memberId && e.day === day)) {
       completions[week][choreId].push({ memberId, day });
     }
+    render();
+    // Whoever inserted the row already announced it.
+    if (!inserted) return;
 
+    // Side effects only, after the UI has updated: never awaited, never failing the tick.
     const member = members.find(m => m.id === memberId);
-    const count = completionCount(choreId, memberId, completions, week);
-    await publishEvent("chore.completed", memberId, {
-      member_id: memberId,
-      member_name: member?.name ?? "",
-      chore_id: choreId,
-      chore_name: chore?.name ?? "",
-      week,
-      day,
-      frequency: chore?.frequency ?? "weekly",
-      points: chore?.points ?? 0,
-      completion_count: count,
-    });
-    await logRecognition("chore_completed", `${member?.name ?? "Someone"} finished ${chore?.name ?? "a chore"}`, {
+    logRecognition("chore_completed", `${member?.name ?? "Someone"} finished ${chore?.name ?? "a chore"}`, {
       memberId,
       choreId,
       week,
       day,
       deepLink: `/run/${APP_ID}`,
-    });
-
-    const milestone = chore?.frequency === "daily" && [3, 5, 7].includes(count);
-    if (milestone) {
-      await publishEvent("chore.streak", memberId, {
-        member_id: memberId,
-        member_name: member?.name ?? "",
-        chore_id: choreId,
-        chore_name: chore?.name ?? "",
-        week,
-        days_completed: count,
-      });
-      await logRecognition("chore_streak", `${member?.name ?? "Someone"} has a ${count}-day ${chore?.name ?? "chore"} streak`, {
-        memberId,
-        choreId,
-        week,
-        daysCompleted: count,
-        deepLink: `/run/${APP_ID}`,
-      });
-    }
+    }).catch(() => {});
+    if (chore?.frequency === "daily") announceStreak(chore, choreId, member, memberId, week).catch(() => {});
+    return;
   }
 
   render();
+}
+
+// Counted from the stored rows, not the in-memory snapshot: days ticked in the
+// widget or on another device since load decide which streak this is. A
+// failed read falls back to the snapshot.
+async function announceStreak(chore, choreId, member, memberId, week) {
+  let stored = 0;
+  try {
+    const { rows } = await dbChecked(
+      `SELECT day FROM app_chore_tracker__completions WHERE chore_id = ? AND member_id = ? AND week = ?`,
+      [choreId, memberId, week]
+    );
+    stored = rows?.length ?? 0;
+  } catch { /* snapshot below */ }
+  const count = Math.max(stored, completionCount(choreId, memberId, completions, week));
+  const streak = streakEvent({ chore, choreId, member, memberId, week, count });
+  if (!streak) return;
+  await Promise.all([
+    publishEvent(streak.type, memberId, streak.payload, streak.key),
+    logRecognition("chore_streak", `${member?.name ?? "Someone"} has a ${count}-day ${chore?.name ?? "chore"} streak`, {
+      memberId,
+      choreId,
+      week,
+      daysCompleted: count,
+      deepLink: `/run/${APP_ID}`,
+    }),
+  ]);
 }
 
 async function saveChore(chore) {
@@ -851,10 +851,10 @@ window.deleteChore = deleteChore;
 
 // ─── Screens ──────────────────────────────────────────────────────────────
 function renderWhoScreen() {
-  // Only an adult may mark chores on behalf of login-less kids: the completions
-  // row policy is owner_only (adults bypass), so a non-adult acting as another
-  // member would be rejected server-side. Offer the switch only to adults.
-  const canActForKids = isAdult(HUB_MEMBER);
+  // Only a supervisor may mark chores on behalf of login-less kids: the
+  // completions row keeps another member's name only for a supervisor, and
+  // anyone else's tick would be saved (and credited) under their own id.
+  const canActForKids = CAN_ACT_FOR_OTHERS;
   const switchable = members.filter(m => m.id === HUB_MEMBER?.id || (canActForKids && m.role === "child" && !m.email));
   document.getElementById("root").innerHTML = `
     <div id="who-screen">
@@ -862,7 +862,7 @@ function renderWhoScreen() {
       <p>Select your name to see your chores for the week</p>
       <div class="member-grid">
         ${switchable.map(m => `
-          <button class="member-btn" onclick="selectMember('${m.id}')">
+          <button class="member-btn" data-select-member="${esc(m.id)}">
             <div class="avatar" style="background:${_memberColor(m.id)}">${initial(m.name)}</div>
             <span>${esc(m.name)}</span>
             <span class="role-badge">${m.role === "adult" ? "Parent" : "Kid"}</span>
@@ -946,7 +946,7 @@ function renderKidView() {
   document.getElementById("root").innerHTML = `
     <div class="nav-bar">
       <span class="who">Chores for <strong>${esc(currentMember.name)}</strong></span>
-      ${isAdult(HUB_MEMBER) && members.some(m => m.role === "child" && !m.email) ? `<button class="btn btn-ghost btn-sm" onclick="switchMember()">Switch</button>` : ""}
+      ${CAN_ACT_FOR_OTHERS && members.some(m => m.role === "child" && !m.email) ? `<button class="btn btn-ghost btn-sm" onclick="switchMember()">Switch</button>` : ""}
     </div>
 
     <div class="earnings-bar">
@@ -971,7 +971,7 @@ function renderKidView() {
       </div>
     </div>
 
-    <div class="section-title">${weekLabel(new Date())}</div>
+    <div class="section-title">${weekLabel(hubDay())}</div>
     <div class="card">${choresHtml}</div>
   `;
 }
@@ -1020,7 +1020,7 @@ function renderAdminView() {
             </div>
           `;
         }).join("");
-    contentHtml = `<div class="section-title">${weekLabel(new Date())}</div>${kidsHtml}`;
+    contentHtml = `<div class="section-title">${weekLabel(hubDay())}</div>${kidsHtml}`;
   }
 
   if (adminTab === "chores") {
@@ -1036,7 +1036,7 @@ function renderAdminView() {
                 <div class="name">${esc(c.name)}</div>
                 <div class="meta">${c.points} pt${c.points !== 1 ? "s" : ""} · ${c.frequency === "daily" ? "Daily" : "Weekly"} · ${assignLabel}</div>
               </div>
-              <button class="btn btn-ghost btn-sm" onclick='editChore("${c.id}")'>Edit</button>
+              <button class="btn btn-ghost btn-sm" data-chore-edit="${esc(c.id)}">Edit</button>
             </div>
           `;
         }).join("");
@@ -1096,7 +1096,7 @@ function renderAdminView() {
   document.getElementById("root").innerHTML = `
     <div class="nav-bar">
       <span class="who">Admin: <strong>${esc(currentMember.name)}</strong></span>
-      ${isAdult(HUB_MEMBER) && members.some(m => m.role === "child" && !m.email) ? `<button class="btn btn-ghost btn-sm" onclick="switchMember()">Switch</button>` : ""}
+      ${CAN_ACT_FOR_OTHERS && members.some(m => m.role === "child" && !m.email) ? `<button class="btn btn-ghost btn-sm" onclick="switchMember()">Switch</button>` : ""}
     </div>
     ${tabHtml}
     ${contentHtml}
@@ -1132,6 +1132,11 @@ function render() {
 // loading the entire history blob, then posts a recap to the message board.
 async function checkAndSendWeeklySummary() {
   if (!DB || !HUB_MEMBER || !isAdult(HUB_MEMBER)) return;
+  // Only a publisher whose allowance key the hub scopes to the child: then two
+  // of them racing past the lastSummaryWeek guard still store ONE event, and
+  // Piggy Bank deposits once. A space's non-steward adults would each store
+  // their own.
+  if (!speaksForOthers(HUB_MEMBER, TENANT)) return;
 
   // Keys both the completions read and the stored lastSummaryWeek marker, so it
   // has to be the household's week or the recap covers the wrong seven days.
@@ -1176,6 +1181,17 @@ async function checkAndSendWeeklySummary() {
 
   const fmtMinLocal = m => m < 60 ? `${m}m` : m % 60 === 0 ? `${m/60}h` : `${Math.floor(m/60)}h ${m%60}m`;
 
+  // One pass builds both the recap line and the allowance event, so the recap
+  // can never report a different amount from the one Piggy Bank deposits.
+  // Every allowance.earned is sent before anything announces the week: a
+  // failure worth retrying later (network, 5xx, or the daily event limit's
+  // 429, which resets) leaves the week unmarked, so the next adult to open
+  // Chores sends them again (the keys make the repeats the same events)
+  // instead of the deposit being lost while the recap says it happened. A
+  // final refusal (400, 403) will not succeed later either, so it is logged
+  // and the week still closes.
+  const announcements = [];
+  let retryLater = false;
   for (const kid of kids) {
     const assigned = choresForMember(kid.id);
     if (assigned.length === 0) continue;
@@ -1188,26 +1204,14 @@ async function checkAndSendWeeklySummary() {
       : settings.rewardType === "both" ? `${fmt$(cents)} + ${fmtMinLocal(minutes)} screen time`
       : fmt$(cents);
     lines.push(`${allDone ? "✅" : "🔲"} ${kid.name}: ${done.length}/${assigned.length} chores · ${earnDesc} earned`);
-  }
 
-  const messageBody = lines.join("\n");
-  await fetch("/api/messages", {
-    method: "POST", headers: { "Content-Type": "application/json" },
-    body: JSON.stringify({ author_name: "Chore Tracker", body: messageBody }),
-  }).catch(() => {});
-
-  // Publish per-member allowance events — piggy-bank app consumes these to auto-deposit.
-  for (const kid of kids) {
-    const assigned = choresForMember(kid.id);
-    if (assigned.length === 0) continue;
-    const done    = choresDoneThisWeek(kid.id, chores, members, prevCompletions, prevWeek);
-    const cents   = earnedCents(kid.id, chores, members, prevCompletions, settings, prevWeek);
-    const minutes = (settings.rewardType !== "money" && settings.centsPerPoint > 0)
-      ? Math.round((cents / settings.centsPerPoint) * settings.minutesPerPoint) : 0;
+    // cents_earned is money actually owed (see owedCents): Piggy Bank deposits
+    // whatever this field says.
+    const owed = owedCents(cents, settings);
     const payload = {
       member_id:       kid.id,
       member_name:     kid.name,
-      cents_earned:    cents,
+      cents_earned:    owed,
       minutes_earned:  minutes,
       reward_type:     settings.rewardType,
       note:            `Chores — week of ${prevWeek}`,
@@ -1216,17 +1220,33 @@ async function checkAndSendWeeklySummary() {
       chores_done:     done.length,
       chores_assigned: assigned.length,
     };
-    await publishEvent("allowance.earned", kid.id, payload);
-    await logRecognition("allowance_earned", `${kid.name} earned ${earnDesc} from chores`, {
+    // Keyed by kid and week: the lastSummaryWeek guard above is read-then-write,
+    // so two adults opening Chores at once can both get here, and Piggy Bank
+    // deposits every allowance.earned it sees.
+    const sent = await publishEvent("allowance.earned", kid.id, payload, `${kid.id}:${prevWeek}`);
+    if (!sent.ok) {
+      if (worthRetryingLater(sent)) retryLater = true;
+      else console.warn(`[chores] allowance.earned for ${kid.id} (${prevWeek}) refused: HTTP ${sent.status}`);
+      continue;
+    }
+    announcements.push(() => logRecognition("allowance_earned", `${kid.name} earned ${earnDesc} from chores`, {
       memberId: kid.id,
       week: prevWeek,
-      centsEarned: cents,
+      centsEarned: owed,
       minutesEarned: minutes,
       choresDone: done.length,
       choresAssigned: assigned.length,
       deepLink: `/run/${APP_ID}`,
-    });
+    }));
   }
+  if (retryLater) return; // unmarked: retried on the next open
+
+  const messageBody = lines.join("\n");
+  await fetch("/api/messages", {
+    method: "POST", headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ author_name: "Chore Tracker", body: messageBody }),
+  }).catch(() => {});
+  for (const announce of announcements) announce().catch(() => {});
 
   await fetch(window.__NOTIFY_URL ?? "/api/notifications/send", {
     method: "POST", headers: { "Content-Type": "application/json" },
@@ -1258,13 +1278,6 @@ function handleDeepLink() {
     (async () => {
       if (DB) {
         await initDb();
-        // Adults only. This is a one-time legacy import that WRITES the
-        // settings table, and settings is now adult_writable (it holds the
-        // allowance conversion rate, which a child must not be able to
-        // rewrite) — so an ungated call would throw on a child's first launch.
-        // It also reads first and returns early once the marker is set, so on
-        // every already-migrated household this is a no-op for everyone.
-        if (HUB_MEMBER && isAdult(HUB_MEMBER)) await migrateFromBlob();
         await Promise.all([
           loadSettings(),
           loadChores(),

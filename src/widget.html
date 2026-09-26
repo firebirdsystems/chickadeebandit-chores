@@ -123,8 +123,8 @@
 </head>
 <body>
 <script type="module">
-import { memberColor, initial, esc, isAdult } from "/hub-sdk.js";
-import { isAssigned, isoWeek, weekLabel, fmtDollars, todayStr } from "./logic.js";
+import { memberColor, initial, esc, isAdult, hubToday, createDbHelper } from "/hub-sdk.js";
+import { isAssigned, isoWeek, weekLabel, fmtDollars, streakEvent, isDuplicateRowError, publishAppEvent } from "./logic.js";
 
 const CONTEXT    = window.__CONTEXT_URL ?? "";
 const DB         = window.__DB_URL      ?? "";
@@ -136,11 +136,26 @@ let members     = [];
 let chores      = [];
 let doneDays    = new Map();   // choreId -> Set<day>; day "" = weekly, "YYYY-MM-DD" = daily
 let settings    = { centsPerPoint: 10 };
-const week      = isoWeek();
-const today     = todayStr();
+// The HOUSEHOLD's calendar day, as the app uses (see index.html): completions
+// are keyed by (week, day), so a widget on a device in another timezone, or
+// ticked just before midnight, must not write a different day or week. Read
+// at use, never frozen at load: a widget stays mounted across midnight.
+const hubDay    = () => new Date(`${hubToday()}T12:00:00`);
+const weekNow   = () => isoWeek(hubDay());
+let loadedWeek  = weekNow();   // the week doneDays describes
+let notice      = "";
+let noticeTimer = null;
+
+function showNotice(text) {
+  notice = text;
+  // One timer at a time, so an earlier failure cannot clear a later notice.
+  clearTimeout(noticeTimer);
+  noticeTimer = setTimeout(() => { notice = ""; render(); }, 4000);
+  render();
+}
 
 // "Done right now" — today for daily chores, this week for weekly chores.
-const dayFor    = c => c.frequency === "daily" ? today : "";
+const dayFor    = c => c.frequency === "daily" ? hubToday() : "";
 const isDoneNow = c => doneDays.get(c.id)?.has(dayFor(c)) ?? false;
 
 async function dbq(sql, params = []) {
@@ -152,6 +167,10 @@ async function dbq(sql, params = []) {
   });
   return res.json();
 }
+
+// A statement whose failure must stop the caller (it throws the hub's error
+// text): a tick is only real, and only earns points, when its row is saved.
+const dbChecked = createDbHelper(DB);
 
 async function loadMembers() {
   if (!CONTEXT) {
@@ -167,6 +186,7 @@ async function loadMembers() {
 async function load() {
   const memberId = HUB_MEMBER?.id;
   if (!memberId) { render(); return; }
+  const week = weekNow();
 
   const [{ rows: choreRows }, { rows: settRows }, { rows: doneRows }] = await Promise.all([
     dbq(`SELECT id, name, points, assigned_to, frequency FROM app_chore_tracker__chores ORDER BY created_at`),
@@ -174,11 +194,13 @@ async function load() {
     dbq(`SELECT chore_id, day FROM app_chore_tracker__completions WHERE member_id = ? AND week = ?`, [memberId, week]),
   ]);
 
-  chores = choreRows.map(r => ({ ...r, assignedTo: JSON.parse(r.assigned_to ?? "[]"), frequency: r.frequency ?? "weekly" }));
+  // points as a number, always: it is rendered unescaped (see index.html).
+  chores = choreRows.map(r => ({ ...r, points: Number(r.points) || 0, assignedTo: JSON.parse(r.assigned_to ?? "[]"), frequency: r.frequency ?? "weekly" }));
   for (const { key, value } of settRows) {
     if (key === "centsPerPoint") settings.centsPerPoint = Number(value);
   }
   doneDays = new Map();
+  loadedWeek = week;
   for (const r of doneRows) {
     if (!doneDays.has(r.chore_id)) doneDays.set(r.chore_id, new Set());
     doneDays.get(r.chore_id).add(r.day ?? "");  // weekly chores carry day ""
@@ -190,21 +212,65 @@ async function load() {
 async function toggle(choreId) {
   const memberId = HUB_MEMBER?.id;
   if (!memberId) return;
+  // A new week since load: what doneDays says is last week's. Reload first.
+  const week = weekNow();
+  if (week !== loadedWeek) {
+    try { await load(); } catch { showNotice("Couldn't refresh chores. Try again."); return; }
+  }
   const chore = chores.find(c => c.id === choreId);
-  const day   = chore?.frequency === "daily" ? today : "";
+  const day   = chore?.frequency === "daily" ? hubToday() : "";
   const days  = doneDays.get(choreId) ?? new Set();
-  if (days.has(day)) {
-    await dbq(`DELETE FROM app_chore_tracker__completions WHERE chore_id=? AND member_id=? AND week=? AND day=?`,
-      [choreId, memberId, week, day]);
-    days.delete(day);
-  } else {
-    await dbq(
-      `INSERT OR IGNORE INTO app_chore_tracker__completions (chore_id, member_id, week, day, completed_at) VALUES (?,?,?,?,?)`,
-      [choreId, memberId, week, day, new Date().toISOString()]);
-    days.add(day);
+  // Only the write decides success. The streak after a saved row is a
+  // best-effort side effect and must never report the save as failed.
+  let inserted = false;
+  try {
+    if (days.has(day)) {
+      await dbChecked(`DELETE FROM app_chore_tracker__completions WHERE chore_id=? AND member_id=? AND week=? AND day=?`,
+        [choreId, memberId, week, day]);
+      days.delete(day);
+    } else {
+      // A plain single-row INSERT, never OR IGNORE: the hub publishes
+      // chore.completed from this row and refuses a conflict-resolving insert
+      // here. A primary-key error means the row is already there (ticked in the
+      // app or on another device), which is "checked", not a failure.
+      try {
+        await dbChecked(
+          `INSERT INTO app_chore_tracker__completions (chore_id, member_id, week, day, completed_at) VALUES (?,?,?,?,?)`,
+          [choreId, memberId, week, day, new Date().toISOString()]);
+        inserted = true;
+      } catch (error) {
+        if (!isDuplicateRowError(error?.message)) throw error;
+      }
+      days.add(day);
+    }
+  } catch {
+    // Leave the tick as it was: the row was not saved.
+    showNotice("Couldn't save that. Try again.");
+    return;
   }
   doneDays.set(choreId, days);
+  if (notice) { clearTimeout(noticeTimer); notice = ""; }
   render();
+  if (inserted && chore?.frequency === "daily") {
+    announceStreak(chore, choreId, memberId, week, days.size).catch(() => {});
+  }
+}
+
+// Counted from the stored rows, not the snapshot: days ticked in the app or on
+// another device since load decide which streak this is. A failed read falls
+// back to the snapshot.
+async function announceStreak(chore, choreId, memberId, week, snapshot) {
+  let stored = 0;
+  try {
+    const { rows } = await dbChecked(
+      `SELECT day FROM app_chore_tracker__completions WHERE chore_id = ? AND member_id = ? AND week = ?`,
+      [choreId, memberId, week]);
+    stored = rows?.length ?? 0;
+  } catch { /* snapshot below */ }
+  const count = Math.max(stored, snapshot);
+  const member = members.find(m => m.id === memberId) ?? HUB_MEMBER;
+  const streak = streakEvent({ chore, choreId, member, memberId, week, count });
+  if (streak) await publishAppEvent(EVENTS, { type: streak.type, subjectId: memberId, payload: streak.payload, key: streak.key });
 }
 
 function render() {
@@ -225,7 +291,7 @@ function render() {
   const doneNowCount = myChores.filter(isDoneNow).length;
   const header = `
     <div class="header">
-      <span class="header-week">${weekLabel()}</span>
+      <span class="header-week">${weekLabel(hubDay())}</span>
       <span class="header-pts">${doneNowCount}/${myChores.length} done</span>
     </div>`;
 
@@ -244,7 +310,7 @@ function render() {
       ${sorted.map(c => {
         const done    = isDoneNow(c);
         const isDaily = c.frequency === "daily";
-        return `<div class="chore-row ${done ? "done" : ""}" onclick="doToggle('${c.id}')">
+        return `<div class="chore-row ${done ? "done" : ""}" data-chore-toggle="${esc(c.id)}">
           <div class="check">${done ? "✓" : ""}</div>
           <span class="chore-name">${esc(c.name)}${isDaily ? ' <span class="daily-tag">daily</span>' : ""}</span>
           <span class="chore-pts">${c.points}pt${c.points !== 1 ? "s" : ""}</span>
@@ -260,14 +326,19 @@ function render() {
 
   const footer = `
     <div class="footer">
-      <span class="footer-earned">Earned this week: <strong>${earned}</strong></span>
+      <span class="footer-earned">${notice ? `<span role="alert">${esc(notice)}</span>` : `Earned this week: <strong>${earned}</strong>`}</span>
       <a class="open-link" href="/run/${APP_ID}">All chores →</a>
     </div>`;
 
   document.body.innerHTML = header + rows + footer;
 }
 
-window.doToggle = id => toggle(id).catch(() => {});
+// Delegated, never an inline onclick: a chore id is data any space participant
+// can write, and interpolating it into a handler string would run it as code.
+document.body.addEventListener("click", (e) => {
+  const t = e.target.closest("[data-chore-toggle]");
+  if (t) toggle(t.getAttribute("data-chore-toggle")).catch(() => {});
+});
 
 (async () => {
   await loadMembers();

@@ -3,7 +3,8 @@ import {
   initial, memberColor, MEMBER_COLORS,
   isoWeek, weekLabel,
   isAssigned, isDone, isDoneNow, completionCount, choresDoneThisWeek,
-  earnedCents, fmtDollars, todayStr,
+  earnedCents, fmtDollars, todayStr, canActForOthers, speaksForOthers, owedCents, streakEvent,
+  isDuplicateRowError, sendWithRetry, publishAppEvent, worthRetryingLater,
 } from "../src/logic.js";
 
 // ── Fixtures ──────────────────────────────────────────────────────────────────
@@ -361,5 +362,212 @@ describe("fmtDollars", () => {
 
   it("formats large amounts correctly", () => {
     expect(fmtDollars(10000)).toBe("$100.00");
+  });
+});
+
+describe("canActForOthers", () => {
+  const adult = { id: "a", role: "adult" };
+  const kid = { id: "k", role: "child" };
+
+  it("lets an adult member act for others in a household", () => {
+    expect(canActForOthers(adult)).toBe(true);
+    expect(canActForOthers(adult, { tenantKind: "household" })).toBe(true);
+  });
+
+  it("never lets anyone act for others in a shared space, admin or not", () => {
+    // The hub keeps another member's name on a row only in a household here:
+    // an app whose rows emit events cannot be installed in a roster space.
+    expect(canActForOthers(adult, { tenantKind: "shared_space" })).toBe(false);
+    expect(canActForOthers(adult, { tenantKind: "shared_space", isAdmin: true })).toBe(false);
+  });
+
+  it("never lets a memberless session act for others, admin or not", () => {
+    // The creator-fallback admin has no member row; the hub refuses every
+    // completion such a session writes.
+    expect(canActForOthers(null, { isAdmin: true })).toBe(false);
+    expect(canActForOthers({ role: "adult" }, { isAdmin: true })).toBe(false);
+  });
+
+  it("never lets a child, a guest, a non-hub role or nobody act for others", () => {
+    for (const role of ["child", "guest", "admin"]) {
+      expect(canActForOthers({ id: "x", role }), role).toBe(false);
+    }
+    expect(canActForOthers(kid, { isAdmin: true })).toBe(false);
+    expect(canActForOthers(null)).toBe(false);
+  });
+});
+
+describe("speaksForOthers", () => {
+  it("is every adult in a household", () => {
+    expect(speaksForOthers({ role: "adult" })).toBe(true);
+    expect(speaksForOthers({ role: "adult" }, { tenantKind: "household" })).toBe(true);
+    for (const role of ["child", "guest", "admin"]) {
+      expect(speaksForOthers({ role }), role).toBe(false);
+    }
+    expect(speaksForOthers(null)).toBe(false);
+  });
+
+  it("is an admin anywhere, and only an admin outside a household", () => {
+    expect(speaksForOthers({ role: "child" }, { isAdmin: true })).toBe(true);
+    expect(speaksForOthers(null, { isAdmin: true, tenantKind: "shared_space" })).toBe(true);
+    expect(speaksForOthers({ role: "adult" }, { tenantKind: "shared_space" })).toBe(false);
+  });
+});
+
+describe("owedCents", () => {
+  it("owes nothing in a screen-time-only household, and the cents otherwise", () => {
+    expect(owedCents(450, { rewardType: "screen_time" })).toBe(0);
+    for (const rewardType of ["money", "both", undefined]) {
+      expect(owedCents(450, { rewardType }), String(rewardType)).toBe(450);
+    }
+  });
+});
+
+describe("streakEvent", () => {
+  const base = { choreId: "c1", member: { name: "Jordan" }, memberId: "kid-1", week: "2026-W39" };
+  const daily = { name: "Bed", points: 2, frequency: "daily" };
+
+  it("is a chore.streak for a daily chore at 3, 5 and 7 days, and null otherwise", () => {
+    for (const count of [1, 2, 3, 4, 5, 6, 7]) {
+      const streak = streakEvent({ ...base, chore: daily, count });
+      if (![3, 5, 7].includes(count)) {
+        expect(streak, String(count)).toBeNull();
+        continue;
+      }
+      expect(streak, String(count)).toEqual({
+        type: "chore.streak",
+        payload: {
+          member_id: "kid-1", member_name: "Jordan", chore_id: "c1", chore_name: "Bed",
+          week: "2026-W39", days_completed: count,
+        },
+        key: `c1:kid-1:2026-W39:${count}`,
+      });
+    }
+  });
+
+  it("is null for a weekly or unknown chore", () => {
+    expect(streakEvent({ ...base, chore: { name: "Dishes", frequency: "weekly" }, count: 3 })).toBeNull();
+    expect(streakEvent({ ...base, chore: undefined, count: 3 })).toBeNull();
+  });
+
+  it("falls back to empty names when the member or chore name is missing", () => {
+    const streak = streakEvent({ ...base, member: undefined, chore: { frequency: "daily" }, count: 5 });
+    expect(streak.payload.member_name).toBe("");
+    expect(streak.payload.chore_name).toBe("");
+  });
+});
+
+describe("isDuplicateRowError", () => {
+  it("is true for a primary-key failure on completions, as D1 and the hub word it", () => {
+    for (const message of [
+      "UNIQUE constraint failed: app_chore_tracker__completions.chore_id, app_chore_tracker__completions.member_id, app_chore_tracker__completions.week, app_chore_tracker__completions.day",
+      "D1_ERROR: UNIQUE constraint failed: app_chore_tracker__completions.chore_id: SQLITE_CONSTRAINT",
+      "UNIQUE constraint failed: app_chore_tracker__completions.chore_id (transaction carried write effects: completions)",
+      "UNIQUE constraint failed",
+    ]) {
+      expect(isDuplicateRowError(message), message).toBe(true);
+    }
+  });
+
+  it("is false for any other failure, including a unique failure on another table", () => {
+    for (const message of [
+      "UNIQUE constraint failed: hub__app_events.id",
+      "INSERT OR IGNORE is not allowed on a table that declares write_effects",
+      "DB row limit exceeded",
+      "Save failed (500)",
+      "",
+      undefined,
+    ]) {
+      expect(isDuplicateRowError(message), String(message)).toBe(false);
+    }
+  });
+});
+
+describe("sendWithRetry", () => {
+  const response = (status) => ({ ok: status >= 200 && status < 300, status });
+  const run = async (statuses) => {
+    const calls = [];
+    const slept = [];
+    const result = await sendWithRetry(async () => {
+      const next = statuses[calls.length];
+      calls.push(next);
+      if (next === "network") throw new Error("offline");
+      return response(next);
+    }, { delays: [10, 20], sleep: async (ms) => { slept.push(ms); } });
+    return { result, calls, slept };
+  };
+
+  it("returns at once on success", async () => {
+    const { result, calls, slept } = await run([201]);
+    expect(result).toEqual({ ok: true, status: 201, retryable: false });
+    expect(calls.length).toBe(1);
+    expect(slept).toEqual([]);
+  });
+
+  it("retries a network error and 5xx, with the given delays", async () => {
+    const { result, calls, slept } = await run(["network", 503, 201]);
+    expect(result.ok).toBe(true);
+    expect(calls).toEqual(["network", 503, 201]);
+    expect(slept).toEqual([10, 20]);
+  });
+
+  it("gives up after the last delay, still marked retryable", async () => {
+    const { result, calls } = await run([503, 503, 503, 201]);
+    expect(result).toEqual({ ok: false, status: 503, retryable: true });
+    expect(calls.length).toBe(3);
+  });
+
+  it("never retries a final refusal such as 403, 400 or 429 (the daily event limit)", async () => {
+    for (const status of [403, 400, 409, 429]) {
+      const { result, calls } = await run([status, 201]);
+      expect(result, String(status)).toEqual({ ok: false, status, retryable: false });
+      expect(calls.length, String(status)).toBe(1);
+    }
+  });
+});
+
+describe("publishAppEvent", () => {
+  it("POSTs type, subject, payload and idempotency key to the events URL", async () => {
+    const calls = [];
+    const fetchImpl = async (url, init) => { calls.push({ url, init }); return { ok: true, status: 201 }; };
+    const result = await publishAppEvent("/run/x/api/events", {
+      type: "chore.streak", subjectId: "kid-1", payload: { days_completed: 3 }, key: "c1:kid-1:2026-W39:3",
+    }, { fetchImpl });
+    expect(result).toEqual({ ok: true, status: 201, retryable: false });
+    expect(calls.length).toBe(1);
+    expect(calls[0].url).toBe("/run/x/api/events");
+    expect(calls[0].init.method).toBe("POST");
+    expect(JSON.parse(calls[0].init.body)).toEqual({
+      type: "chore.streak", subject_id: "kid-1", payload: { days_completed: 3 }, idempotency_key: "c1:kid-1:2026-W39:3",
+    });
+  });
+
+  it("is a no-op success without an events URL (demo mode)", async () => {
+    let called = false;
+    const result = await publishAppEvent("", { type: "chore.streak" }, { fetchImpl: async () => { called = true; } });
+    expect(result).toEqual({ ok: true, status: 0, retryable: false });
+    expect(called).toBe(false);
+  });
+
+  it("retries through sendWithRetry and reports a final refusal", async () => {
+    const statuses = [503, 403];
+    const fetchImpl = async () => { const status = statuses.shift(); return { ok: false, status }; };
+    const result = await publishAppEvent("/e", { type: "allowance.earned" }, { fetchImpl, delays: [1], sleep: async () => {} });
+    expect(result).toEqual({ ok: false, status: 403, retryable: false });
+    expect(statuses).toEqual([]);
+  });
+});
+
+describe("worthRetryingLater", () => {
+  it("keeps a retryable failure and the daily-limit 429 for a later open", () => {
+    expect(worthRetryingLater({ ok: false, status: 503, retryable: true })).toBe(true);
+    expect(worthRetryingLater({ ok: false, status: 0, retryable: true })).toBe(true);
+    expect(worthRetryingLater({ ok: false, status: 429, retryable: false })).toBe(true);
+  });
+
+  it("gives up on a final refusal, and never on a success", () => {
+    expect(worthRetryingLater({ ok: false, status: 403, retryable: false })).toBe(false);
+    expect(worthRetryingLater({ ok: false, status: 400, retryable: false })).toBe(false);
+    expect(worthRetryingLater({ ok: true, status: 201, retryable: false })).toBe(false);
   });
 });

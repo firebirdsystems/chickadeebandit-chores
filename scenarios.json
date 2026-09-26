@@ -180,10 +180,24 @@
         {
           "action": "db",
           "as": "kid",
-          "sql": "INSERT INTO app_chore_tracker__completions (chore_id, member_id, week, day, completed_at) VALUES ('cd', ?, '2026-W01', '2026-01-02', '2026-01-02T00:00:00Z'), ('cd', ?, '2026-W01', '2026-01-03', '2026-01-03T00:00:00Z')",
+          "sql": "INSERT INTO app_chore_tracker__completions (chore_id, member_id, week, day, completed_at) VALUES ('cd', ?, '2026-W01', ?, ?)",
           "params": [
             "{{kid}}",
-            "{{kid}}"
+            "2026-01-02",
+            "2026-01-02T00:00:00Z"
+          ],
+          "expect": {
+            "status": 200
+          }
+        },
+        {
+          "action": "db",
+          "as": "kid",
+          "sql": "INSERT INTO app_chore_tracker__completions (chore_id, member_id, week, day, completed_at) VALUES ('cd', ?, '2026-W01', ?, ?)",
+          "params": [
+            "{{kid}}",
+            "2026-01-03",
+            "2026-01-03T00:00:00Z"
           ],
           "expect": {
             "status": 200
@@ -302,6 +316,176 @@
           "expect": {
             "status": 200,
             "rowCount": 0
+          }
+        }
+      ]
+    },
+    {
+      "name": "a completion is only ever the row: check, uncheck and check again are plain inserts, conflict-resolving inserts are refused, and nobody may POST chore.completed",
+      "members": {
+        "parent": "adult",
+        "kid": "child"
+      },
+      "steps": [
+        {
+          "action": "seedRaw",
+          "sql": "INSERT INTO app_chore_tracker__chores (id, name, points, assigned_to, frequency, created_at) VALUES ('c1', 'Dishes', 5, '[]', 'weekly', '2026-01-01T00:00:00Z')"
+        },
+        {
+          "action": "db",
+          "as": "kid",
+          "sql": "INSERT INTO app_chore_tracker__completions (chore_id, member_id, week, day, completed_at) VALUES (?, ?, ?, ?, ?)",
+          "params": [
+            "c1",
+            "{{kid}}",
+            "2026-W01",
+            "",
+            "2026-01-02T00:00:00Z"
+          ],
+          "expect": {
+            "status": 200
+          }
+        },
+        {
+          "action": "db",
+          "as": "kid",
+          "sql": "DELETE FROM app_chore_tracker__completions WHERE chore_id = ? AND member_id = ? AND week = ? AND day = ?",
+          "params": [
+            "c1",
+            "{{kid}}",
+            "2026-W01",
+            ""
+          ],
+          "expect": {
+            "status": 200
+          }
+        },
+        {
+          "action": "db",
+          "as": "kid",
+          "sql": "INSERT INTO app_chore_tracker__completions (chore_id, member_id, week, day, completed_at) VALUES (?, ?, ?, ?, ?)",
+          "params": [
+            "c1",
+            "{{kid}}",
+            "2026-W01",
+            "",
+            "2026-01-02T00:00:00Z"
+          ],
+          "expect": {
+            "status": 200
+          }
+        },
+        {
+          "action": "db",
+          "as": "kid",
+          "sql": "INSERT INTO app_chore_tracker__completions (chore_id, member_id, week, day, completed_at) VALUES (?, ?, ?, ?, ?)",
+          "params": [
+            "c1",
+            "{{kid}}",
+            "2026-W01",
+            "",
+            "2026-01-02T00:00:00Z"
+          ],
+          "expect": {
+            "status": 400,
+            "errorIncludes": "UNIQUE constraint failed"
+          }
+        },
+        {
+          "action": "db",
+          "as": "kid",
+          "sql": "INSERT OR IGNORE INTO app_chore_tracker__completions (chore_id, member_id, week, day, completed_at) VALUES (?, ?, ?, ?, ?)",
+          "params": [
+            "c1",
+            "{{kid}}",
+            "2026-W02",
+            "",
+            "2026-01-09T00:00:00Z"
+          ],
+          "expect": {
+            "status": 400,
+            "errorIncludes": "INSERT OR IGNORE is not allowed"
+          }
+        },
+        {
+          "action": "db",
+          "as": "kid",
+          "sql": "INSERT INTO app_chore_tracker__completions (chore_id, member_id, week, day, completed_at) VALUES (?, ?, ?, ?, ?) ON CONFLICT (chore_id, member_id, week, day) DO NOTHING",
+          "params": [
+            "c1",
+            "{{kid}}",
+            "2026-W02",
+            "",
+            "2026-01-09T00:00:00Z"
+          ],
+          "expect": {
+            "status": 400,
+            "errorIncludes": "ON CONFLICT tail is not allowed"
+          }
+        },
+        {
+          "action": "db",
+          "as": "kid",
+          "sql": "SELECT week FROM app_chore_tracker__completions WHERE member_id = ?",
+          "params": [
+            "{{kid}}"
+          ],
+          "expect": {
+            "status": 200,
+            "rowCount": 1,
+            "rowsContain": [
+              {
+                "week": "2026-W01"
+              }
+            ]
+          }
+        },
+        {
+          "action": "publish",
+          "as": "kid",
+          "type": "chore.completed",
+          "payload": {
+            "member_id": "{{kid}}",
+            "chore_id": "c1",
+            "week": "2026-W01",
+            "day": "",
+            "points": 100000
+          },
+          "expect": {
+            "status": 403,
+            "errorIncludes": "it cannot be posted"
+          }
+        },
+        {
+          "action": "publish",
+          "as": "parent",
+          "type": "chore.completed",
+          "payload": {
+            "member_id": "{{kid}}",
+            "chore_id": "c1",
+            "week": "2026-W01",
+            "day": "",
+            "points": 100000
+          },
+          "expect": {
+            "status": 403,
+            "errorIncludes": "it cannot be posted"
+          }
+        },
+        {
+          "action": "publish",
+          "as": "kid",
+          "type": "chore.streak",
+          "payload": {
+            "member_id": "{{kid}}",
+            "member_name": "kid",
+            "chore_id": "c1",
+            "chore_name": "Dishes",
+            "week": "2026-W01",
+            "days_completed": 3
+          },
+          "expect": {
+            "status": 201
           }
         }
       ]

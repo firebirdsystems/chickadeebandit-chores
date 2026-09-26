@@ -1,6 +1,7 @@
 /**
  * Pure business logic for the Chores & Allowance app.
- * No DOM, no fetch — importable in both browser and test environments.
+ * No DOM, and no global fetch: the one network helper (publishAppEvent) takes
+ * its fetch as an argument — importable in both browser and test environments.
  */
 
 // Shared utilities — sourced from shared.js (mirrors hub-sdk.js) for testability.
@@ -158,4 +159,136 @@ export function earnedCents(memberId, chores, members, completions, settings, we
  */
 export function fmtDollars(cents) {
   return `$${(cents / 100).toFixed(2)}`;
+}
+
+/**
+ * Whether the signed-in member speaks for others in the hub's EVENT LOG, which
+ * scopes an idempotency key to the member it names: an admin anywhere, and in
+ * a household every adult. Mirrors the hub's speaksForOthers. Two such
+ * publishers sending the same keyed event for one child store ONE event, so
+ * only they should send per-child events that several adults might send at
+ * once (the weekly allowance).
+ */
+export function speaksForOthers(member, { isAdmin = false, tenantKind = "household" } = {}) {
+  if (isAdmin) return true;
+  return tenantKind === "household" && member?.role === "adult";
+}
+
+/**
+ * Whether the signed-in member may record chores for someone else. Mirrors the
+ * hub's rule for whose name a completion row keeps (supervisor_assigns_owner):
+ * an adult member of a household. In a shared space the hub writes the row
+ * under the recorder's own id, so the child would get nothing. (Roster spaces,
+ * where a steward supervises, cannot install an app whose rows emit events.)
+ */
+export function canActForOthers(member, { tenantKind = "household" } = {}) {
+  // A MEMBER, always: the creator-fallback admin session has no member row,
+  // so the hub refuses every completion it writes, for anyone.
+  if (!member?.id) return false;
+  return tenantKind === "household" && member.role === "adult";
+}
+
+/**
+ * Sends a request, retrying only failures that can succeed on a retry: a
+ * network error or a 5xx. Any other status is final, 429 included: the hub's
+ * 429 on /api/events is the daily event limit, which no retry in seconds
+ * clears. Safe for keyed events: a retry of the same idempotency key is the
+ * same stored event. `send` returns a fetch Response (or throws).
+ * Resolves { ok, status, retryable }.
+ */
+export async function sendWithRetry(send, {
+  delays = [500, 2000],
+  sleep = (ms) => new Promise((resolve) => setTimeout(resolve, ms)),
+} = {}) {
+  let last = { ok: false, status: 0, retryable: true };
+  for (let attempt = 0; attempt <= delays.length; attempt++) {
+    if (attempt > 0) await sleep(delays[attempt - 1]);
+    let status = 0;
+    try {
+      const res = await send();
+      status = res.status;
+      if (res.ok) return { ok: true, status, retryable: false };
+    } catch {
+      status = 0;
+    }
+    const retryable = status === 0 || status >= 500;
+    last = { ok: false, status, retryable };
+    if (!retryable) break;
+  }
+  return last;
+}
+
+/**
+ * Whether a failed send is worth trying again on a LATER open, as opposed to
+ * immediately: a retryable failure, or a 429 (the hub's daily event limit,
+ * which resets). Only another refusal (400, 403) is final. The weekly summary
+ * keeps its week open on these, so a spent quota delays an allowance rather
+ * than dropping it.
+ */
+export function worthRetryingLater(result) {
+  return !result.ok && (result.retryable || result.status === 429);
+}
+
+/**
+ * POSTs one app event to the hub's events endpoint, with sendWithRetry.
+ * `key` is the idempotency key naming the fact, so a resend is the same
+ * stored event. No `eventsUrl` (demo mode) is a no-op success.
+ * Resolves { ok, status, retryable }.
+ */
+export function publishAppEvent(eventsUrl, { type, subjectId, payload = {}, key }, {
+  fetchImpl = (...args) => fetch(...args),
+  ...retry
+} = {}) {
+  if (!eventsUrl) return Promise.resolve({ ok: true, status: 0, retryable: false });
+  return sendWithRetry(() => fetchImpl(eventsUrl, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ type, subject_id: subjectId, payload, idempotency_key: key }),
+  }), retry);
+}
+
+/**
+ * The money a week's chores earned, in cents. A screen-time-only household
+ * earns no money: `cents` is then only the basis minutes are computed from,
+ * and Piggy Bank deposits whatever `cents_earned` says.
+ */
+export function owedCents(cents, settings) {
+  return settings?.rewardType === "screen_time" ? 0 : cents;
+}
+
+/**
+ * The `chore.streak` a completion earns, or null: only a daily chore, and only
+ * when it reaches 3, 5 or 7 days this week. Shared by the app and its widget so
+ * a tick means the same thing wherever it happens. `count` is this week's
+ * completions of the chore by the member, including this one. The key names
+ * the milestone, so a tick, untick and re-tick announces it once.
+ */
+export function streakEvent({ chore, choreId, member, memberId, week, count }) {
+  if (chore?.frequency !== "daily" || ![3, 5, 7].includes(count)) return null;
+  return {
+    type: "chore.streak",
+    payload: {
+      member_id: memberId,
+      member_name: member?.name ?? "",
+      chore_id: choreId,
+      chore_name: chore?.name ?? "",
+      week,
+      days_completed: count,
+    },
+    key: `${choreId}:${memberId}:${week}:${count}`,
+  };
+}
+
+/**
+ * Whether a failed completion INSERT failed only because the row already
+ * exists (checked on another device, or a double tap). The hub refuses
+ * `INSERT OR IGNORE` and `ON CONFLICT` on a table whose rows emit events, so a
+ * plain INSERT's primary-key error is how "already checked" arrives. A message
+ * naming a different table is a real failure.
+ */
+export function isDuplicateRowError(message, table = "completions") {
+  const match = /UNIQUE constraint failed(?::\s*([A-Za-z0-9_]+)\.)?/i.exec(String(message ?? ""));
+  if (!match) return false;
+  const failed = match[1];
+  return !failed || failed === table || failed.endsWith(`__${table}`);
 }

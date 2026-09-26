@@ -25,7 +25,6 @@
   },
   "storage": "db",
   "preload": {
-    "migrated": {"sql": "SELECT value FROM app_chore_tracker__settings WHERE key = 'migrated_from_blob'"},
     "settings": {"sql": "SELECT key, value FROM app_chore_tracker__settings WHERE key IN ('centsPerPoint', 'resetDay', 'rewardType', 'minutesPerPoint')"},
     "chores": {"sql": "SELECT id, name, points, assigned_to, frequency FROM app_chore_tracker__chores ORDER BY created_at"}
   },
@@ -130,6 +129,25 @@
     },
     "allowance.earned": {
       "require_role": "adult"
+    }
+  },
+  "write_effects": {
+    "completions": {
+      "emit": [
+        {
+          "event": "chore.completed",
+          "key": ["chore_id", "member_id", "week", "day"],
+          "payload": { "chore_id": "chore_id", "member_id": "member_id", "week": "week", "day": "day" },
+          "subject": "chore_id",
+          "lookups": [
+            {
+              "table": "chores",
+              "match": { "id": "chore_id" },
+              "stamp": { "points": "points" }
+            }
+          ]
+        }
+      ]
     }
   },
   "alert_on": [
