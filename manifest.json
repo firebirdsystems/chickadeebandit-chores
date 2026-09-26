@@ -145,7 +145,8 @@
               "match": { "id": "chore_id" },
               "stamp": { "points": "points" }
             }
-          ]
+          ],
+          "fresh": { "column": "week", "past_days": 14, "future_days": 0 }
         }
       ]
     }
