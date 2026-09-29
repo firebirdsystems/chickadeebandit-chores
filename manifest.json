@@ -155,9 +155,6 @@
     "chore.streak",
     "allowance.earned"
   ],
-  "exports": [
-    "kid-progress"
-  ],
   "nav": {
     "label": "Chores"
   },
