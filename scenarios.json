@@ -489,6 +489,94 @@
           }
         }
       ]
+    },
+    {
+      "name": "in a general shared space only the steward credits a completion to another member; a participant adult's tick is credited to themselves",
+      "context": "shared_space",
+      "members": { "a": "adult", "b": "adult", "steward": "admin" },
+      "steps": [
+        {
+          "action": "seedRaw",
+          "sql": "INSERT INTO app_chore_tracker__chores (id, name, points, assigned_to, frequency, created_at) VALUES ('c1', 'Dishes', 5, '[]', 'weekly', '2026-01-01T00:00:00Z')"
+        },
+        {
+          "action": "db",
+          "as": "a",
+          "sql": "INSERT INTO app_chore_tracker__completions (chore_id, member_id, week, day, completed_at) VALUES ('c1', ?, '2026-W01', '', '2026-01-02T00:00:00Z')",
+          "params": ["{{b}}"],
+          "expect": { "status": 200 }
+        },
+        {
+          "action": "db",
+          "as": "steward",
+          "sql": "SELECT member_id FROM app_chore_tracker__completions WHERE chore_id = 'c1' AND week = '2026-W01'",
+          "expect": { "status": 200, "rowCount": 1, "rowsContain": [{ "member_id": "scn-a" }] }
+        },
+        {
+          "action": "db",
+          "as": "steward",
+          "sql": "INSERT INTO app_chore_tracker__completions (chore_id, member_id, week, day, completed_at) VALUES ('c1', ?, '2026-W02', '', '2026-01-09T00:00:00Z')",
+          "params": ["{{b}}"],
+          "expect": { "status": 200 }
+        },
+        {
+          "action": "db",
+          "as": "b",
+          "sql": "SELECT member_id FROM app_chore_tracker__completions WHERE chore_id = 'c1' AND week = '2026-W02'",
+          "expect": { "status": 200, "rowCount": 1, "rowsContain": [{ "member_id": "scn-b" }] }
+        },
+        {
+          "action": "db",
+          "as": "b",
+          "sql": "SELECT chore_id FROM app_chore_tracker__completions WHERE member_id = ?",
+          "params": ["{{b}}"],
+          "expect": { "status": 200, "rowCount": 1 }
+        }
+      ]
+    },
+    {
+      "name": "in a shared space a participant adult cannot delete another member's completion, while the steward can",
+      "context": "shared_space",
+      "members": { "a": "adult", "b": "adult", "steward": "admin" },
+      "steps": [
+        {
+          "action": "seedRaw",
+          "sql": "INSERT INTO app_chore_tracker__chores (id, name, points, assigned_to, frequency, created_at) VALUES ('c1', 'Dishes', 5, '[]', 'weekly', '2026-01-01T00:00:00Z')"
+        },
+        {
+          "action": "seedRaw",
+          "sql": "INSERT INTO app_chore_tracker__completions (chore_id, member_id, week, day, completed_at, visibility) VALUES ('c1', ?, '2026-W01', '', '2026-01-02T00:00:00Z', 'everyone')",
+          "params": ["{{b}}"]
+        },
+        {
+          "action": "db",
+          "as": "a",
+          "sql": "DELETE FROM app_chore_tracker__completions WHERE chore_id = 'c1' AND member_id = ?",
+          "params": ["{{b}}"],
+          "expect": { "status": 200 }
+        },
+        {
+          "action": "db",
+          "as": "b",
+          "sql": "SELECT chore_id FROM app_chore_tracker__completions WHERE member_id = ?",
+          "params": ["{{b}}"],
+          "expect": { "status": 200, "rowCount": 1 }
+        },
+        {
+          "action": "db",
+          "as": "steward",
+          "sql": "DELETE FROM app_chore_tracker__completions WHERE chore_id = 'c1' AND member_id = ?",
+          "params": ["{{b}}"],
+          "expect": { "status": 200 }
+        },
+        {
+          "action": "db",
+          "as": "b",
+          "sql": "SELECT chore_id FROM app_chore_tracker__completions WHERE member_id = ?",
+          "params": ["{{b}}"],
+          "expect": { "status": 200, "rowCount": 0 }
+        }
+      ]
     }
   ]
 }
