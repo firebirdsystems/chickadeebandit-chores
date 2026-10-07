@@ -123,7 +123,7 @@
 </head>
 <body>
 <script type="module">
-import { memberColor, initial, esc, isAdult, hubToday, createDbHelper } from "/hub-sdk.js";
+import { memberColor, initial, esc, isAdult, hubToday, createDbHelper, glyph } from "/hub-sdk.js";
 import { isAssigned, isoWeek, weekLabel, fmtDollars, streakEvent, isDuplicateRowError, publishAppEvent } from "./logic.js";
 
 const CONTEXT    = window.__CONTEXT_URL ?? "";
@@ -311,7 +311,7 @@ function render() {
         const done    = isDoneNow(c);
         const isDaily = c.frequency === "daily";
         return `<div class="chore-row ${done ? "done" : ""}" data-chore-toggle="${esc(c.id)}">
-          <div class="check">${done ? "✓" : ""}</div>
+          <div class="check">${done ? glyph("tick", { accent: "currentColor" }) : ""}</div>
           <span class="chore-name">${esc(c.name)}${isDaily ? ' <span class="daily-tag">daily</span>' : ""}</span>
           <span class="chore-pts">${c.points}pt${c.points !== 1 ? "s" : ""}</span>
         </div>`;

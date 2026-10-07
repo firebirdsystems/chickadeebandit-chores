@@ -406,7 +406,7 @@
 </div>
 
 <script type="module">
-import { memberColor, initial, esc, isAdult, hubConfirm, hubToday, createDbHelper } from "/hub-sdk.js";
+import { memberColor, initial, esc, isAdult, hubConfirm, hubToday, createDbHelper, glyph } from "/hub-sdk.js";
 import {
   isoWeek, weekLabel, isAssigned, isDone, isDoneNow, completionCount,
   choresDoneThisWeek, earnedCents, fmtDollars, getPreviousIsoWeek,
@@ -932,7 +932,7 @@ function renderKidView() {
         return `
           <div class="chore-row">
             <button class="chore-check ${done ? "done" : ""}" data-chore-toggle="${esc(c.id)}">
-              ${done ? "✓" : ""}
+              ${done ? glyph("tick", { accent: "currentColor" }) : ""}
             </button>
             <div class="chore-main">
               <span class="chore-name ${done ? "done" : ""}">${esc(c.name)}${isDaily ? ` <span class="freq-tag">daily</span>` : ""}</span>
@@ -1004,7 +1004,7 @@ function renderAdminView() {
                   return `<span class="kid-chore-pill ${cnt > 0 ? "done" : ""}">${esc(c.name)} <strong>${cnt}/7</strong></span>`;
                 }
                 const d = _isDoneNow(c, kid.id);
-                return `<span class="kid-chore-pill ${d ? "done" : ""}">${d ? "✓ " : ""}${esc(c.name)}</span>`;
+                return `<span class="kid-chore-pill ${d ? "done" : ""}">${d ? glyph("tick", { accent: "currentColor" }) + " " : ""}${esc(c.name)}</span>`;
               }).join("");
           return `
             <div class="kid-card">
