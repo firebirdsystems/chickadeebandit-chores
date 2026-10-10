@@ -1,0 +1,426 @@
+{
+  "seed": [
+    {
+      "sql": "INSERT INTO app_chore_tracker__settings (key, value) VALUES (?, ?)",
+      "params": [
+        "centsPerPoint",
+        "10"
+      ]
+    },
+    {
+      "sql": "INSERT INTO app_chore_tracker__settings (key, value) VALUES (?, ?)",
+      "params": [
+        "resetDay",
+        "monday"
+      ]
+    },
+    {
+      "sql": "INSERT INTO app_chore_tracker__settings (key, value) VALUES (?, ?)",
+      "params": [
+        "rewardType",
+        "both"
+      ]
+    },
+    {
+      "sql": "INSERT INTO app_chore_tracker__settings (key, value) VALUES (?, ?)",
+      "params": [
+        "minutesPerPoint",
+        "5"
+      ]
+    },
+    {
+      "sql": "INSERT INTO app_chore_tracker__settings (key, value) VALUES (?, strftime('%Y','now','-7 days','-3 days','weekday 4') || ? || substr(CAST(101 + (CAST(strftime('%j','now','-7 days','-3 days','weekday 4') AS INTEGER) - 1) / 7 AS TEXT), 2, 2))",
+      "params": [
+        "lastSummaryWeek",
+        "-W"
+      ]
+    },
+    {
+      "sql": "INSERT INTO app_chore_tracker__chores (id, name, points, assigned_to, frequency, created_at) VALUES (?, ?, 3, ?, ?, strftime('%Y-%m-%dT%H:%M:%fZ','now','-45 days','+0 minutes'))",
+      "params": [
+        "ch-dishes",
+        "Unload the dishwasher",
+        "[\"all\"]",
+        "daily"
+      ]
+    },
+    {
+      "sql": "INSERT INTO app_chore_tracker__chores (id, name, points, assigned_to, frequency, created_at) VALUES (?, ?, 2, ?, ?, strftime('%Y-%m-%dT%H:%M:%fZ','now','-45 days','+1 minutes'))",
+      "params": [
+        "ch-pets",
+        "Feed the dog",
+        "[\"all\"]",
+        "daily"
+      ]
+    },
+    {
+      "sql": "INSERT INTO app_chore_tracker__chores (id, name, points, assigned_to, frequency, created_at) VALUES (?, ?, 1, ?, ?, strftime('%Y-%m-%dT%H:%M:%fZ','now','-45 days','+2 minutes'))",
+      "params": [
+        "ch-beds",
+        "Make your bed",
+        "[\"children\"]",
+        "daily"
+      ]
+    },
+    {
+      "sql": "INSERT INTO app_chore_tracker__chores (id, name, points, assigned_to, frequency, created_at) VALUES (?, ?, 5, ?, ?, strftime('%Y-%m-%dT%H:%M:%fZ','now','-45 days','+3 minutes'))",
+      "params": [
+        "ch-trash",
+        "Take out trash and recycling",
+        "[\"all\"]",
+        "weekly"
+      ]
+    },
+    {
+      "sql": "INSERT INTO app_chore_tracker__chores (id, name, points, assigned_to, frequency, created_at) VALUES (?, ?, 8, ?, ?, strftime('%Y-%m-%dT%H:%M:%fZ','now','-45 days','+4 minutes'))",
+      "params": [
+        "ch-vacuum",
+        "Vacuum the living room",
+        "[\"all\"]",
+        "weekly"
+      ]
+    },
+    {
+      "sql": "INSERT INTO app_chore_tracker__chores (id, name, points, assigned_to, frequency, created_at) VALUES (?, ?, 10, ?, ?, strftime('%Y-%m-%dT%H:%M:%fZ','now','-45 days','+5 minutes'))",
+      "params": [
+        "ch-bathroom",
+        "Clean the upstairs bathroom",
+        "[\"all\"]",
+        "weekly"
+      ]
+    },
+    {
+      "sql": "INSERT INTO app_chore_tracker__chores (id, name, points, assigned_to, frequency, created_at) VALUES (?, ?, 6, ?, ?, strftime('%Y-%m-%dT%H:%M:%fZ','now','-45 days','+6 minutes'))",
+      "params": [
+        "ch-laundry",
+        "Fold and put away laundry",
+        "[\"all\"]",
+        "weekly"
+      ]
+    },
+    {
+      "sql": "INSERT INTO app_chore_tracker__chores (id, name, points, assigned_to, frequency, created_at) VALUES (?, ?, 12, ?, ?, strftime('%Y-%m-%dT%H:%M:%fZ','now','-45 days','+7 minutes'))",
+      "params": [
+        "ch-lawn",
+        "Mow the front lawn",
+        "[\"all\"]",
+        "weekly"
+      ]
+    },
+    {
+      "sql": "INSERT INTO app_chore_tracker__chores (id, name, points, assigned_to, frequency, created_at) VALUES (?, ?, 3, ?, ?, strftime('%Y-%m-%dT%H:%M:%fZ','now','-45 days','+8 minutes'))",
+      "params": [
+        "ch-plants",
+        "Water the houseplants",
+        "[\"all\"]",
+        "weekly"
+      ]
+    },
+    {
+      "sql": "INSERT INTO app_chore_tracker__chores (id, name, points, assigned_to, frequency, created_at) VALUES (?, ?, 5, ?, ?, strftime('%Y-%m-%dT%H:%M:%fZ','now','-45 days','+9 minutes'))",
+      "params": [
+        "ch-room",
+        "Tidy your room",
+        "[\"children\"]",
+        "weekly"
+      ]
+    },
+    {
+      "sql": "INSERT INTO app_chore_tracker__completions (chore_id, member_id, week, day, completed_at) VALUES (?, ?, ?, ?, strftime('%Y-%m-%dT%H:%M:%fZ','now','-0 days'))",
+      "params": [
+        "ch-dishes",
+        "{{me}}",
+        "{{isoweek:-0}}",
+        "{{date:-0}}"
+      ]
+    },
+    {
+      "sql": "INSERT INTO app_chore_tracker__completions (chore_id, member_id, week, day, completed_at) VALUES (?, ?, ?, ?, strftime('%Y-%m-%dT%H:%M:%fZ','now','-1 days'))",
+      "params": [
+        "ch-dishes",
+        "{{me}}",
+        "{{isoweek:-1}}",
+        "{{date:-1}}"
+      ]
+    },
+    {
+      "sql": "INSERT INTO app_chore_tracker__completions (chore_id, member_id, week, day, completed_at) VALUES (?, ?, ?, ?, strftime('%Y-%m-%dT%H:%M:%fZ','now','-2 days'))",
+      "params": [
+        "ch-dishes",
+        "{{me}}",
+        "{{isoweek:-2}}",
+        "{{date:-2}}"
+      ]
+    },
+    {
+      "sql": "INSERT INTO app_chore_tracker__completions (chore_id, member_id, week, day, completed_at) VALUES (?, ?, ?, ?, strftime('%Y-%m-%dT%H:%M:%fZ','now','-3 days'))",
+      "params": [
+        "ch-dishes",
+        "{{me}}",
+        "{{isoweek:-3}}",
+        "{{date:-3}}"
+      ]
+    },
+    {
+      "sql": "INSERT INTO app_chore_tracker__completions (chore_id, member_id, week, day, completed_at) VALUES (?, ?, ?, ?, strftime('%Y-%m-%dT%H:%M:%fZ','now','-4 days'))",
+      "params": [
+        "ch-dishes",
+        "{{me}}",
+        "{{isoweek:-4}}",
+        "{{date:-4}}"
+      ]
+    },
+    {
+      "sql": "INSERT INTO app_chore_tracker__completions (chore_id, member_id, week, day, completed_at) VALUES (?, ?, ?, ?, strftime('%Y-%m-%dT%H:%M:%fZ','now','-5 days'))",
+      "params": [
+        "ch-dishes",
+        "{{me}}",
+        "{{isoweek:-5}}",
+        "{{date:-5}}"
+      ]
+    },
+    {
+      "sql": "INSERT INTO app_chore_tracker__completions (chore_id, member_id, week, day, completed_at) VALUES (?, ?, ?, ?, strftime('%Y-%m-%dT%H:%M:%fZ','now','-6 days'))",
+      "params": [
+        "ch-dishes",
+        "{{me}}",
+        "{{isoweek:-6}}",
+        "{{date:-6}}"
+      ]
+    },
+    {
+      "sql": "INSERT INTO app_chore_tracker__completions (chore_id, member_id, week, day, completed_at) VALUES (?, ?, ?, ?, strftime('%Y-%m-%dT%H:%M:%fZ','now','-8 days'))",
+      "params": [
+        "ch-dishes",
+        "{{me}}",
+        "{{isoweek:-8}}",
+        "{{date:-8}}"
+      ]
+    },
+    {
+      "sql": "INSERT INTO app_chore_tracker__completions (chore_id, member_id, week, day, completed_at) VALUES (?, ?, ?, ?, strftime('%Y-%m-%dT%H:%M:%fZ','now','-9 days'))",
+      "params": [
+        "ch-dishes",
+        "{{me}}",
+        "{{isoweek:-9}}",
+        "{{date:-9}}"
+      ]
+    },
+    {
+      "sql": "INSERT INTO app_chore_tracker__completions (chore_id, member_id, week, day, completed_at) VALUES (?, ?, ?, ?, strftime('%Y-%m-%dT%H:%M:%fZ','now','-10 days'))",
+      "params": [
+        "ch-dishes",
+        "{{me}}",
+        "{{isoweek:-10}}",
+        "{{date:-10}}"
+      ]
+    },
+    {
+      "sql": "INSERT INTO app_chore_tracker__completions (chore_id, member_id, week, day, completed_at) VALUES (?, ?, ?, ?, strftime('%Y-%m-%dT%H:%M:%fZ','now','-0 days'))",
+      "params": [
+        "ch-pets",
+        "{{me}}",
+        "{{isoweek:-0}}",
+        "{{date:-0}}"
+      ]
+    },
+    {
+      "sql": "INSERT INTO app_chore_tracker__completions (chore_id, member_id, week, day, completed_at) VALUES (?, ?, ?, ?, strftime('%Y-%m-%dT%H:%M:%fZ','now','-1 days'))",
+      "params": [
+        "ch-pets",
+        "{{me}}",
+        "{{isoweek:-1}}",
+        "{{date:-1}}"
+      ]
+    },
+    {
+      "sql": "INSERT INTO app_chore_tracker__completions (chore_id, member_id, week, day, completed_at) VALUES (?, ?, ?, ?, strftime('%Y-%m-%dT%H:%M:%fZ','now','-2 days'))",
+      "params": [
+        "ch-pets",
+        "{{me}}",
+        "{{isoweek:-2}}",
+        "{{date:-2}}"
+      ]
+    },
+    {
+      "sql": "INSERT INTO app_chore_tracker__completions (chore_id, member_id, week, day, completed_at) VALUES (?, ?, ?, ?, strftime('%Y-%m-%dT%H:%M:%fZ','now','-4 days'))",
+      "params": [
+        "ch-pets",
+        "{{me}}",
+        "{{isoweek:-4}}",
+        "{{date:-4}}"
+      ]
+    },
+    {
+      "sql": "INSERT INTO app_chore_tracker__completions (chore_id, member_id, week, day, completed_at) VALUES (?, ?, ?, ?, strftime('%Y-%m-%dT%H:%M:%fZ','now','-5 days'))",
+      "params": [
+        "ch-pets",
+        "{{me}}",
+        "{{isoweek:-5}}",
+        "{{date:-5}}"
+      ]
+    },
+    {
+      "sql": "INSERT INTO app_chore_tracker__completions (chore_id, member_id, week, day, completed_at) VALUES (?, ?, ?, ?, strftime('%Y-%m-%dT%H:%M:%fZ','now','-7 days'))",
+      "params": [
+        "ch-pets",
+        "{{me}}",
+        "{{isoweek:-7}}",
+        "{{date:-7}}"
+      ]
+    },
+    {
+      "sql": "INSERT INTO app_chore_tracker__completions (chore_id, member_id, week, day, completed_at) VALUES (?, ?, ?, ?, strftime('%Y-%m-%dT%H:%M:%fZ','now','-8 days'))",
+      "params": [
+        "ch-pets",
+        "{{me}}",
+        "{{isoweek:-8}}",
+        "{{date:-8}}"
+      ]
+    },
+    {
+      "sql": "INSERT INTO app_chore_tracker__completions (chore_id, member_id, week, day, completed_at) VALUES (?, ?, ?, ?, strftime('%Y-%m-%dT%H:%M:%fZ','now','-9 days'))",
+      "params": [
+        "ch-pets",
+        "{{me}}",
+        "{{isoweek:-9}}",
+        "{{date:-9}}"
+      ]
+    },
+    {
+      "sql": "INSERT INTO app_chore_tracker__completions (chore_id, member_id, week, day, completed_at) VALUES (?, ?, ?, ?, strftime('%Y-%m-%dT%H:%M:%fZ','now','-0 days'))",
+      "params": [
+        "ch-trash",
+        "{{me}}",
+        "{{isoweek:-0}}",
+        ""
+      ]
+    },
+    {
+      "sql": "INSERT INTO app_chore_tracker__completions (chore_id, member_id, week, day, completed_at) VALUES (?, ?, ?, ?, strftime('%Y-%m-%dT%H:%M:%fZ','now','-7 days'))",
+      "params": [
+        "ch-trash",
+        "{{me}}",
+        "{{isoweek:-7}}",
+        ""
+      ]
+    },
+    {
+      "sql": "INSERT INTO app_chore_tracker__completions (chore_id, member_id, week, day, completed_at) VALUES (?, ?, ?, ?, strftime('%Y-%m-%dT%H:%M:%fZ','now','-14 days'))",
+      "params": [
+        "ch-trash",
+        "{{me}}",
+        "{{isoweek:-14}}",
+        ""
+      ]
+    },
+    {
+      "sql": "INSERT INTO app_chore_tracker__completions (chore_id, member_id, week, day, completed_at) VALUES (?, ?, ?, ?, strftime('%Y-%m-%dT%H:%M:%fZ','now','-0 days'))",
+      "params": [
+        "ch-vacuum",
+        "{{me}}",
+        "{{isoweek:-0}}",
+        ""
+      ]
+    },
+    {
+      "sql": "INSERT INTO app_chore_tracker__completions (chore_id, member_id, week, day, completed_at) VALUES (?, ?, ?, ?, strftime('%Y-%m-%dT%H:%M:%fZ','now','-7 days'))",
+      "params": [
+        "ch-vacuum",
+        "{{me}}",
+        "{{isoweek:-7}}",
+        ""
+      ]
+    },
+    {
+      "sql": "INSERT INTO app_chore_tracker__completions (chore_id, member_id, week, day, completed_at) VALUES (?, ?, ?, ?, strftime('%Y-%m-%dT%H:%M:%fZ','now','-7 days'))",
+      "params": [
+        "ch-bathroom",
+        "{{me}}",
+        "{{isoweek:-7}}",
+        ""
+      ]
+    },
+    {
+      "sql": "INSERT INTO app_chore_tracker__completions (chore_id, member_id, week, day, completed_at) VALUES (?, ?, ?, ?, strftime('%Y-%m-%dT%H:%M:%fZ','now','-14 days'))",
+      "params": [
+        "ch-bathroom",
+        "{{me}}",
+        "{{isoweek:-14}}",
+        ""
+      ]
+    },
+    {
+      "sql": "INSERT INTO app_chore_tracker__completions (chore_id, member_id, week, day, completed_at) VALUES (?, ?, ?, ?, strftime('%Y-%m-%dT%H:%M:%fZ','now','-0 days'))",
+      "params": [
+        "ch-laundry",
+        "{{me}}",
+        "{{isoweek:-0}}",
+        ""
+      ]
+    },
+    {
+      "sql": "INSERT INTO app_chore_tracker__completions (chore_id, member_id, week, day, completed_at) VALUES (?, ?, ?, ?, strftime('%Y-%m-%dT%H:%M:%fZ','now','-7 days'))",
+      "params": [
+        "ch-laundry",
+        "{{me}}",
+        "{{isoweek:-7}}",
+        ""
+      ]
+    },
+    {
+      "sql": "INSERT INTO app_chore_tracker__completions (chore_id, member_id, week, day, completed_at) VALUES (?, ?, ?, ?, strftime('%Y-%m-%dT%H:%M:%fZ','now','-14 days'))",
+      "params": [
+        "ch-laundry",
+        "{{me}}",
+        "{{isoweek:-14}}",
+        ""
+      ]
+    },
+    {
+      "sql": "INSERT INTO app_chore_tracker__completions (chore_id, member_id, week, day, completed_at) VALUES (?, ?, ?, ?, strftime('%Y-%m-%dT%H:%M:%fZ','now','-7 days'))",
+      "params": [
+        "ch-lawn",
+        "{{me}}",
+        "{{isoweek:-7}}",
+        ""
+      ]
+    },
+    {
+      "sql": "INSERT INTO app_chore_tracker__completions (chore_id, member_id, week, day, completed_at) VALUES (?, ?, ?, ?, strftime('%Y-%m-%dT%H:%M:%fZ','now','-0 days'))",
+      "params": [
+        "ch-plants",
+        "{{me}}",
+        "{{isoweek:-0}}",
+        ""
+      ]
+    },
+    {
+      "sql": "INSERT INTO app_chore_tracker__completions (chore_id, member_id, week, day, completed_at) VALUES (?, ?, ?, ?, strftime('%Y-%m-%dT%H:%M:%fZ','now','-7 days'))",
+      "params": [
+        "ch-plants",
+        "{{me}}",
+        "{{isoweek:-7}}",
+        ""
+      ]
+    },
+    {
+      "sql": "INSERT INTO app_chore_tracker__completions (chore_id, member_id, week, day, completed_at) VALUES (?, ?, ?, ?, strftime('%Y-%m-%dT%H:%M:%fZ','now','-14 days'))",
+      "params": [
+        "ch-plants",
+        "{{me}}",
+        "{{isoweek:-14}}",
+        ""
+      ]
+    },
+    {
+      "sql": "INSERT INTO app_chore_tracker__completions (chore_id, member_id, week, day, completed_at) VALUES (?, ?, ?, ?, strftime('%Y-%m-%dT%H:%M:%fZ','now','-21 days'))",
+      "params": [
+        "ch-plants",
+        "{{me}}",
+        "{{isoweek:-21}}",
+        ""
+      ]
+    }
+  ]
+}
