@@ -165,7 +165,9 @@ async function dbq(sql, params = []) {
     headers: { "Content-Type": "application/json" },
     body: JSON.stringify({ sql, params }),
   });
-  return res.json();
+  const json = await res.json().catch(() => null);
+  if (!res.ok || !json || typeof json !== "object" || json.error) throw new Error(json?.error || "Couldn’t reach the hub. Try again.");
+  return json;
 }
 
 // A statement whose failure must stop the caller (it throws the hub's error
@@ -342,13 +344,13 @@ document.body.addEventListener("click", (e) => {
 
 (async () => {
   await loadMembers();
-  await load();
+  try { await load(); } catch { showNotice("Couldn't load chores. Try again."); }
 
   // Refresh the widget when allowance is earned. Must be a type this app
   // publishes (manifest.publishes) — the hub 403s reads of any other type.
   if (EVENTS) {
     const { createEventPoller } = await import("/hub-sdk.js");
-    createEventPoller(EVENTS, "allowance.earned", () => load(), 60_000);
+    createEventPoller(EVENTS, "allowance.earned", () => load().catch(() => {}), 60_000);
   }
 })();
 </script>

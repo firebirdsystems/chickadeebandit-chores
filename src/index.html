@@ -397,6 +397,8 @@
       border: 1px solid var(--red); border-radius: var(--radius);
       box-shadow: var(--shadow); z-index: 1000;
     }
+    .load-error { margin: 0 0 12px; padding: 10px 14px; border-radius: 10px; background: var(--hub-tint-danger, #fee2e2); color: var(--hub-tint-danger-fg, #b91c1c); font-size: 0.9rem; display: flex; gap: 10px; align-items: center; justify-content: space-between; }
+    .load-error-retry { background: none; border: 1px solid currentColor; border-radius: 8px; padding: 5px 10px; font: inherit; font-weight: 600; color: inherit; cursor: pointer; flex-shrink: 0; }
   </style>
 <base href="/run/chore-tracker/">
 </head>
@@ -460,6 +462,7 @@ document.getElementById("root").addEventListener("click", (e) => {
   if (edit) return window.editChore(edit.getAttribute("data-chore-edit"));
   const who = e.target.closest("[data-select-member]");
   if (who) return window.selectMember(who.getAttribute("data-select-member"));
+  if (e.target.closest('[data-testid="load-retry"]')) return firstLoad();
 });
 
 // App data — now backed by separate DB tables instead of one blob
@@ -475,14 +478,15 @@ async function db(sql, params = []) {
     headers: { "Content-Type": "application/json" },
     body: JSON.stringify({ sql, params }),
   });
-  return res.json(); // { rows: [...] }
+  const json = await res.json().catch(() => null);
+  if (!res.ok || !json || typeof json !== "object" || json.error) throw new Error(json?.error || "Couldn’t reach the hub. Try again.");
+  return json; // { rows: [...] }
 }
 
-// A statement whose failure must stop the caller (it throws the hub's error text).
-// db() above never looks at the status, which is fine for reads that degrade
-// to an empty list but not for a completion: the row IS the completion (the
-// hub publishes chore.completed from it), so a silently failed insert would
-// show a tick that earns nothing and vanishes on reload.
+// The SDK's helper, used for completions. It throws the hub's error text, as
+// db() does: the row IS the completion (the hub publishes chore.completed from
+// it), so a silently failed insert would show a tick that earns nothing and
+// vanishes on reload.
 const dbChecked = createDbHelper(DB);
 
 // A short, self-dismissing message for a failure the user needs to know about.
@@ -599,10 +603,14 @@ async function loadMembers() {
     ];
     return;
   }
-  try {
-    const res = await fetch(`${CONTEXT}?keys=family.members`);
-    members = ((await res.json())["family.members"]) ?? [];
-  } catch { members = []; }
+  // Throws when the roster cannot be read: firstLoad counts that as a failed
+  // load rather than drawing a household with nobody in it.
+  const res = await fetch(`${CONTEXT}?keys=family.members`);
+  const json = await res.json().catch(() => null);
+  if (!res.ok || !json || typeof json !== "object" || json.error) throw new Error("Couldn’t reach the hub. Try again.");
+  // The hub answers 200 and names a key it could not resolve in $errors: that read failed too.
+  if (Array.isArray(json.$errors) && json.$errors.includes("family.members")) throw new Error("Couldn’t reach the hub. Try again.");
+  members = json["family.members"] ?? [];
 }
 
 // ─── Actions ──────────────────────────────────────────────────────────────
@@ -706,19 +714,25 @@ async function announceStreak(chore, choreId, member, memberId, week) {
 
 async function saveChore(chore) {
   const now = new Date().toISOString();
-  if (chore.id) {
-    await db(
-      `UPDATE app_chore_tracker__chores SET name = ?, points = ?, assigned_to = ?, frequency = ? WHERE id = ?`,
-      [chore.name, chore.points, JSON.stringify(chore.assignedTo), chore.frequency, chore.id]
-    );
-    chores = chores.map(c => c.id === chore.id ? chore : c);
-  } else {
-    const id = crypto.randomUUID();
-    await db(
-      `INSERT INTO app_chore_tracker__chores (id, name, points, assigned_to, frequency, created_at) VALUES (?, ?, ?, ?, ?, ?)`,
-      [id, chore.name, chore.points, JSON.stringify(chore.assignedTo), chore.frequency, now]
-    );
-    chores = [...chores, { ...chore, id }];
+  // A failed save leaves the form open with what was typed.
+  try {
+    if (chore.id) {
+      await db(
+        `UPDATE app_chore_tracker__chores SET name = ?, points = ?, assigned_to = ?, frequency = ? WHERE id = ?`,
+        [chore.name, chore.points, JSON.stringify(chore.assignedTo), chore.frequency, chore.id]
+      );
+      chores = chores.map(c => c.id === chore.id ? chore : c);
+    } else {
+      const id = crypto.randomUUID();
+      await db(
+        `INSERT INTO app_chore_tracker__chores (id, name, points, assigned_to, frequency, created_at) VALUES (?, ?, ?, ?, ?, ?)`,
+        [id, chore.name, chore.points, JSON.stringify(chore.assignedTo), chore.frequency, now]
+      );
+      chores = [...chores, { ...chore, id }];
+    }
+  } catch {
+    showNotice("Couldn't save that chore. Please try again.");
+    return;
   }
   closeModal();
   render();
@@ -731,7 +745,12 @@ async function deleteChore(id = modalChoreId) {
   // the same transaction. As two calls, a failure after the first left a year of
   // completion rows keyed to a chore that no longer existed — invisible in every
   // view and alive until retention swept them.
-  await db(`DELETE FROM app_chore_tracker__chores WHERE id = ?`, [id]);
+  try {
+    await db(`DELETE FROM app_chore_tracker__chores WHERE id = ?`, [id]);
+  } catch {
+    showNotice("Couldn't delete that chore. Please try again.");
+    return;
+  }
   chores = chores.filter(c => c.id !== id);
   for (const week of Object.values(completions)) delete week[id];
   render();
@@ -1111,9 +1130,14 @@ window.editChore = function(id) {
 };
 
 window.updateSetting = function(key, val) {
+  const previous = settings[key];
   settings[key] = val;
   db(`INSERT INTO app_chore_tracker__settings (key, value) VALUES (?, ?)
-      ON CONFLICT (key) DO UPDATE SET value = excluded.value`, [key, String(val)]).catch(() => {});
+      ON CONFLICT (key) DO UPDATE SET value = excluded.value`, [key, String(val)]).catch(() => {
+    settings[key] = previous;
+    render();
+    showNotice("Couldn't save that setting. Please try again.");
+  });
   render();
 };
 
@@ -1121,7 +1145,16 @@ window.toggleChore    = toggleChore;
 window.openChoreModal = openChoreModal;
 window.switchMember   = () => { currentMember = null; render(); };
 
+// The first load failed: say so, and show none of the views — every one of them
+// would read as "no chores" and offer writes over data the page never read.
+function renderLoadError() {
+  document.getElementById("root").innerHTML = `
+    <div class="load-error" data-testid="load-error" role="alert"><span>Couldn’t load the chores.</span>
+      <button type="button" class="load-error-retry" data-testid="load-retry">Try again</button></div>`;
+}
+
 function render() {
+  if (loadFailed)                   { renderLoadError(); return; }
   if (!currentMember)               { renderWhoScreen(); return; }
   if (currentMember.role === "adult") renderAdminView();
   else                                renderKidView();
@@ -1272,9 +1305,11 @@ function handleDeepLink() {
 }
 
 // ─── Init ─────────────────────────────────────────────────────────────────
-(async () => {
+let loadFailed = false;
+async function firstLoad() {
+  let failed = false;
   await Promise.all([
-    loadMembers(),
+    loadMembers().catch(() => { failed = true; }),
     (async () => {
       if (DB) {
         await initDb();
@@ -1284,8 +1319,9 @@ function handleDeepLink() {
           loadCompletions([isoWeek(hubDay()), getPreviousIsoWeek(hubDay())]),
         ]);
       }
-    })(),
+    })().catch(() => { failed = true; }),
   ]);
+  loadFailed = failed;
 
   if (HUB_MEMBER) {
     currentMember = members.find(m => m.id === HUB_MEMBER.id) ?? {
@@ -1294,9 +1330,11 @@ function handleDeepLink() {
   }
 
   render();
+  if (loadFailed) return;
   handleDeepLink();
   checkAndSendWeeklySummary().catch(() => {}); // fire-and-forget
-})();
+}
+firstLoad();
 </script>
 </body>
 </html>
