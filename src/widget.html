@@ -107,6 +107,7 @@
     }
     .open-link:hover { text-decoration: underline; }
 
+    .load-error { margin: 8px; padding: 8px 10px; border-radius: 10px; background: var(--hub-tint-danger, #fee2e2); color: var(--hub-tint-danger-fg, #b91c1c); font-size: 0.8rem; }
     .empty {
       flex: 1;
       display: flex;
@@ -145,6 +146,8 @@ const weekNow   = () => isoWeek(hubDay());
 let loadedWeek  = weekNow();   // the week doneDays describes
 let notice      = "";
 let noticeTimer = null;
+let membersLoaded = false;
+let loadFailed    = false;   // the FIRST load failed; cleared by any load that succeeds
 
 function showNotice(text) {
   notice = text;
@@ -177,15 +180,24 @@ const dbChecked = createDbHelper(DB);
 async function loadMembers() {
   if (!CONTEXT) {
     members = [{ id: "demo", name: "You", role: "child" }];
+    membersLoaded = true;
     return;
   }
-  try {
-    const res = await fetch(`${CONTEXT}?keys=family.members`);
-    members = ((await res.json())["family.members"]) ?? [];
-  } catch { members = []; }
+  const res = await fetch(`${CONTEXT}?keys=family.members`);
+  const data = await res.json().catch(() => null);
+  // A member list the hub could not read (not OK, not JSON, or named in
+  // `$errors`) is a failed load. A key merely absent is "not permitted".
+  if (!res.ok || !data || typeof data !== "object" || (Array.isArray(data.$errors) && data.$errors.includes("family.members"))) {
+    throw new Error("Couldn’t load the member list.");
+  }
+  members = data["family.members"] ?? [];
+  membersLoaded = true;
 }
 
 async function load() {
+  // Who a chore is assigned to is read off the member list, so a load without
+  // it would draw "No chores assigned to you" for a list it could not read.
+  if (!membersLoaded) await loadMembers();
   const memberId = HUB_MEMBER?.id;
   if (!memberId) { render(); return; }
   const week = weekNow();
@@ -208,6 +220,7 @@ async function load() {
     doneDays.get(r.chore_id).add(r.day ?? "");  // weekly chores carry day ""
   }
 
+  loadFailed = false;
   render();
 }
 
@@ -288,6 +301,16 @@ function render() {
     return;
   }
 
+  // A failed first load says so and nothing else: "0/0 done" and "Earned
+  // this week: $0.00" would be claims about data the widget never read.
+  if (loadFailed) {
+    document.body.innerHTML = `
+      <div class="header"><span class="header-week">${weekLabel(hubDay())}</span></div>
+      <div class="load-error" data-testid="load-error" role="alert">Couldn’t load the chores.</div>
+      <div class="footer"><span class="footer-earned"></span><a class="open-link" href="/run/${APP_ID}">All chores →</a></div>`;
+    return;
+  }
+
   const myChores = chores.filter(c => isAssigned(c, memberId, members));
 
   const doneNowCount = myChores.filter(isDoneNow).length;
@@ -343,8 +366,7 @@ document.body.addEventListener("click", (e) => {
 });
 
 (async () => {
-  await loadMembers();
-  try { await load(); } catch { showNotice("Couldn't load chores. Try again."); }
+  try { await load(); } catch { loadFailed = true; render(); }
 
   // Refresh the widget when allowance is earned. Must be a type this app
   // publishes (manifest.publishes) — the hub 403s reads of any other type.
