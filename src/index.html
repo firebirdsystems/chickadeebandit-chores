@@ -654,7 +654,7 @@ async function toggleChore(choreId) {
         [choreId, memberId, week, day, new Date().toISOString()]
       );
     } catch (error) {
-      if (!isDuplicateRowError(error?.message)) {
+      if (!isDuplicateRowError(error)) {
         showNotice("Couldn't save that chore. Please try again.");
         return;
       }

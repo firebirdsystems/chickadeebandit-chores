@@ -481,6 +481,21 @@ describe("isDuplicateRowError", () => {
       expect(isDuplicateRowError(message), String(message)).toBe(false);
     }
   });
+
+  it("reads the hub's code off the thrown Error, whatever the message says", () => {
+    const coded = (message, code = "UNIQUE_CONSTRAINT") => Object.assign(new Error(message), { status: 400, code });
+    expect(isDuplicateRowError(coded("That row already exists"))).toBe(true);
+    expect(isDuplicateRowError(coded("UNIQUE constraint failed: app_chore_tracker__completions.chore_id"))).toBe(true);
+    // The code says "a duplicate", the message says where: another table's is a real failure.
+    expect(isDuplicateRowError(coded("UNIQUE constraint failed: hub__app_events.id"))).toBe(false);
+    expect(isDuplicateRowError(coded("Stale state claim", "STALE_STATE_CLAIM"))).toBe(false);
+  });
+
+  it("falls back to the message on an Error that carries no code", () => {
+    expect(isDuplicateRowError(new Error("UNIQUE constraint failed: app_chore_tracker__completions.chore_id (transaction carried write effects: completions)"))).toBe(true);
+    expect(isDuplicateRowError(new Error("DB row limit exceeded"))).toBe(false);
+    expect(isDuplicateRowError(null)).toBe(false);
+  });
 });
 
 describe("sendWithRetry", () => {

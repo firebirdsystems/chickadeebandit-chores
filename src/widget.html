@@ -254,7 +254,7 @@ async function toggle(choreId) {
           [choreId, memberId, week, day, new Date().toISOString()]);
         inserted = true;
       } catch (error) {
-        if (!isDuplicateRowError(error?.message)) throw error;
+        if (!isDuplicateRowError(error)) throw error;
       }
       days.add(day);
     }

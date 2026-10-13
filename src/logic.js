@@ -285,10 +285,16 @@ export function streakEvent({ chore, choreId, member, memberId, week, count }) {
  * `INSERT OR IGNORE` and `ON CONFLICT` on a table whose rows emit events, so a
  * plain INSERT's primary-key error is how "already checked" arrives. A message
  * naming a different table is a real failure.
+ *
+ * Takes the thrown Error (or its message). The hub names the refusal with
+ * `code: "UNIQUE_CONSTRAINT"`, which the request helper copies onto the Error;
+ * SQLite's wording is the fallback, for a hub that does not send the code and
+ * for a write that carried write effects (the hub sends no code for those).
  */
-export function isDuplicateRowError(message, table = "completions") {
+export function isDuplicateRowError(error, table = "completions") {
+  const message = typeof error === "string" ? error : error?.message;
   const match = /UNIQUE constraint failed(?::\s*([A-Za-z0-9_]+)\.)?/i.exec(String(message ?? ""));
-  if (!match) return false;
+  if (!match) return error?.code === "UNIQUE_CONSTRAINT";
   const failed = match[1];
   return !failed || failed === table || failed.endsWith(`__${table}`);
 }
