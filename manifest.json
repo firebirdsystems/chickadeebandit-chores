@@ -43,13 +43,15 @@
       "everyone_values": [
         "everyone"
       ],
-      "supervisor_assigns_owner": true,
-      "retain_days": {
-        "default": 365,
-        "timestamp_column": "completed_at",
-        "id_column": "rowid",
-        "override_key": "completion_history"
-      }
+      "supervisor_assigns_owner": true
+    }
+  },
+  "retention": {
+    "completions": {
+      "default": 365,
+      "timestamp_column": "completed_at",
+      "id_column": "rowid",
+      "override_key": "completion_history"
     }
   },
   "delete_cascades": {
@@ -181,7 +183,6 @@
     }
   },
   "resource_limits": {
-    "max_db_bytes": 52428800,
     "max_store_bytes": 524288,
     "max_store_reads_per_day": 500,
     "max_store_writes_per_day": 200
