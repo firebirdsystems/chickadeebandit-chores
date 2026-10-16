@@ -24,25 +24,14 @@ See the [app-template](https://github.com/firebirdsystems/chickadeebandit-app-te
 
 ## Data model
 
-All data is stored in the hub's app store under a single key `data`:
+The app keeps its data in its own tables in the household database:
 
-```json
-{
-  "settings": {
-    "centsPerPoint": 10,
-    "resetDay": "monday"
-  },
-  "chores": [
-    { "id": "uuid", "name": "Make bed", "points": 5, "assignedTo": ["children"] }
-  ],
-  "completions": {
-    "2026-W20": { "chore-uuid": ["member-id-1"] }
-  }
-}
-```
+- `app_chore_tracker__settings` — key/value settings: `centsPerPoint` (default 10), `rewardType` (`money`, `screen_time` or `both`) and `minutesPerPoint` (default 5).
+- `app_chore_tracker__chores` — one row per chore: `name`, `points`, `assigned_to` (a JSON list), `frequency` (`weekly` or `daily`) and `source_event_id` when an automation created it.
+- `app_chore_tracker__completions` — one row per completion, keyed by chore, member, ISO week (`2026-W20`) and, for daily chores, the day.
 
-`assignedTo` values: `"all"`, `"children"`, `"adults"`, or specific family member IDs.
+`assigned_to` values: `"all"`, `"children"`, `"adults"`, or specific family member IDs.
 
 ## Hub data access
 
-This app reads `family.members` to display family member names and roles. It does not write any family data — all chore data is stored privately in the app's own store.
+This app reads `family.members` to display family member names and roles. Its chore data stays in its own tables; the only thing it sends out is an `allowance.earned` event after each week, which automations in Piggy Bank and Rewards can turn into deposits.
