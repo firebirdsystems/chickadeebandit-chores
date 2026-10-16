@@ -25,7 +25,7 @@
   },
   "storage": "db",
   "preload": {
-    "settings": {"sql": "SELECT key, value FROM app_chore_tracker__settings WHERE key IN ('centsPerPoint', 'resetDay', 'rewardType', 'minutesPerPoint')"},
+    "settings": {"sql": "SELECT key, value FROM app_chore_tracker__settings WHERE key IN ('centsPerPoint', 'rewardType', 'minutesPerPoint')"},
     "chores": {"sql": "SELECT id, name, points, assigned_to, frequency FROM app_chore_tracker__chores ORDER BY created_at"}
   },
   "db_encryption": "off",

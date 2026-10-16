@@ -10,13 +10,6 @@
     {
       "sql": "INSERT INTO app_chore_tracker__settings (key, value) VALUES (?, ?)",
       "params": [
-        "resetDay",
-        "monday"
-      ]
-    },
-    {
-      "sql": "INSERT INTO app_chore_tracker__settings (key, value) VALUES (?, ?)",
-      "params": [
         "rewardType",
         "both"
       ]

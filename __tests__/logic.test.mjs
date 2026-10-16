@@ -18,7 +18,7 @@ function chore(overrides = {}) {
   return { id: "chore-1", name: "Make bed", points: 5, assignedTo: ["children"], frequency: "weekly", ...overrides };
 }
 
-const SETTINGS = { centsPerPoint: 10, resetDay: "monday" };
+const SETTINGS = { centsPerPoint: 10 };
 
 // Build the in-memory completions shape — { week: { choreId: [{ memberId, day }] } } —
 // from a terse { choreId: [memberId | {memberId, day}] } map. Bare member-id strings

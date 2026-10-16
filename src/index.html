@@ -466,7 +466,7 @@ document.getElementById("root").addEventListener("click", (e) => {
 });
 
 // App data — now backed by separate DB tables instead of one blob
-let settings    = { centsPerPoint: 10, resetDay: "monday", rewardType: "money", minutesPerPoint: 5 };
+let settings    = { centsPerPoint: 10, rewardType: "money", minutesPerPoint: 5 };
 let chores      = []; // { id, name, points, assignedTo: string[], frequency: "weekly"|"daily" }
 let completions = {}; // { "YYYY-WW": { choreId: [{ memberId, day }] } } — day "" for weekly, "YYYY-MM-DD" for daily
 
@@ -553,10 +553,9 @@ async function initDb() {
 
 // ─── Load from DB ─────────────────────────────────────────────────────────
 async function loadSettings() {
-  const { rows } = await db(`SELECT key, value FROM app_chore_tracker__settings WHERE key IN ('centsPerPoint', 'resetDay', 'rewardType', 'minutesPerPoint')`);
+  const { rows } = await db(`SELECT key, value FROM app_chore_tracker__settings WHERE key IN ('centsPerPoint', 'rewardType', 'minutesPerPoint')`);
   for (const row of rows) {
     if (row.key === "centsPerPoint")   settings.centsPerPoint   = parseInt(row.value) || 10;
-    if (row.key === "resetDay")        settings.resetDay        = row.value;
     if (row.key === "rewardType")      settings.rewardType      = row.value;
     if (row.key === "minutesPerPoint") settings.minutesPerPoint = parseInt(row.value) || 5;
   }
@@ -1097,17 +1096,6 @@ function renderAdminView() {
           <input type="number" min="1" max="120" value="${settings.minutesPerPoint}"
             onchange="updateSetting('minutesPerPoint', parseInt(this.value))" />
         </div>` : ""}
-        <div class="setting-row">
-          <div>
-            <div class="label">Reset day</div>
-            <div class="sublabel">Chores reset at the start of each week</div>
-          </div>
-          <select onchange="updateSetting('resetDay', this.value)">
-            ${["monday","tuesday","wednesday","thursday","friday","saturday","sunday"].map(d =>
-              `<option value="${d}" ${settings.resetDay === d ? "selected" : ""}>${d.charAt(0).toUpperCase() + d.slice(1)}</option>`
-            ).join("")}
-          </select>
-        </div>
       </div>
     `;
   }
